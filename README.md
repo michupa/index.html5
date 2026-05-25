@@ -12,7 +12,7 @@
 
     <script>
         // ★ここに新しくデプロイした「GASのウェブアプリURL」を貼り付けてください
-        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzfU-5eQYqYO9fvSAEaYUKhNoVmmSxiuEpOfoLz7uDf2kf8Emf-qeFO4HxzG_PKLf7gXQ/exec";
+        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzKEted-9tW00OJbf9syjvVp3h6nHE6t-StAQGxmPD-rEuHffDkLcWoEHpWvZjKXchH8A/exec";
 
         function onScanSuccess(decodedText, decodedResult) {
             console.log(`Scan result: ${decodedText}`);
