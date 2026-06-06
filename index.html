@@ -1,45 +1,215 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>QR Code Scanner</title>
-    <script src="https://unpkg.com/html5-qrcode"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QR管理システム</title>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <style>
+    body { font-family: 'Helvetica Neue', Arial, sans-serif; text-align: center; margin: 0; padding: 20px; background-color: #f4f6f9; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+    h1 { font-size: 1.5rem; margin-bottom: 20px; color: #1e3a8a; }
+    select, button { width: 100%; padding: 12px; font-size: 1rem; border-radius: 8px; border: 1px solid #cbd5e1; margin-bottom: 15px; box-sizing: border-box; }
+    select { background-color: #fff; cursor: pointer; font-weight: bold; }
+    #reader { width: 100%; border-radius: 8px; overflow: hidden; margin-bottom: 15px; border: 1px solid #e2e8f0; }
+    #status-message { font-size: 1.1rem; font-weight: bold; color: #2563eb; padding: 10px; background: #eff6ff; border-radius: 6px; margin-bottom: 15px; min-height: 24px; }
+    .btn-action { background-color: #2563eb; color: white; border: none; font-weight: bold; cursor: pointer; display: none; }
+    .btn-action:hover { background-color: #1d4ed8; }
+  </style>
 </head>
 <body>
-    <h1>QRコードリーダー</h1>
-    <div id="reader" style="width: 100%; max-width: 500px;"></div>
 
-    <script>
-        // ★ここに新しくデプロイした「GASのウェブアプリURL」を貼り付けてください
-        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzKEted-9tW00OJbf9syjvVp3h6nHE6t-StAQGxmPD-rEuHffDkLcWoEHpWvZjKXchH8A/exec";
+<div class="container">
+  <h1>物品管理 QRシステム</h1>
+  
+  <select id="mode-select" onchange="onModeChange()">
+    <option value="入庫">① 入庫処理</option>
+    <option value="出庫">② 出庫処理</option>
+    <option value="配置替え">③ 配置替え処理</option>
+    <option value="ロケーション登録">④ ロケーション登録</option>
+  </select>
 
-        function onScanSuccess(decodedText, decodedResult) {
-            console.log(`Scan result: ${decodedText}`);
-            
-            // GASへデータを送信
-            fetch(GAS_WEB_APP_URL, {
-                method: "POST",
-                mode: "no-cors", // GASへの簡易リクエスト用
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({ text: decodedText })
-            })
-            .then(() => {
-                alert("データをスプレッドシートに記録しました: " + decodedText);
-            })
-            .catch(err => {
-                console.error("エラーが発生しました:", err);
-                alert("送信に失敗しました");
-            });
-        }
+  <div id="status-message">モードを選択してください</div>
 
-        // カメラの起動
-        const html5QrcodeScanner = new Html5QrcodeScanner(
-            "reader", { fps: 10, qrbox: 250 }
-        );
-        html5QrcodeScanner.render(onScanSuccess);
-    </script>
+  <div id="reader"></div>
+
+  <button id="confirm-btn" class="btn-action" onclick="handleConfirmation()">確認して次へ</button>
+</div>
+
+<script>
+  // 💡 あなたの完成しているVercelのAPIエンドポイントURL、または直接GASのウェブアプリURLを指定してください
+  const API_URL = "https://script.google.com/macros/s/AKfycbwXheqTI_iCe2q9xh7tfh6fNGpEbYZjfA3gurrKq28AiaPT1tudRyt6H8Y90k5uAsf8hQ/exec";
+
+  let html5QrcodeScanner;
+  let currentMode = "入庫";
+  let step = 1; 
+  let lastScannedText = "";
+
+  // 各種データを一時保持する変数
+  let dataLog = {
+    location: "",
+    model: "",
+    newLocation: ""
+  };
+
+  function onModeChange() {
+    currentMode = document.getElementById("mode-select").value;
+    resetFlow();
+  }
+
+  function resetFlow() {
+    step = 1;
+    lastScannedText = "";
+    dataLog = { location: "", model: "", newLocation: "" };
+    document.getElementById("confirm-btn").style.display = "none";
+    updateGuideMessage();
+    startScanner();
+  }
+
+  function updateGuideMessage() {
+    const msgEl = document.getElementById("status-message");
+    if (currentMode === "入庫") {
+      msgEl.innerText = step === 1 ? "【入庫】ロケーションを読み込んでください" : "【入庫】型式を読み込んでください";
+    } else if (currentMode === "出庫") {
+      msgEl.innerText = step === 1 ? "【出庫】ロケーションを読み込んでください" : "【出庫】型式を読み込んでください";
+    } else if (currentMode === "配置換え") {
+      if (step === 1) msgEl.innerText = "【配置換え】元ロケーションを読み込んでください";
+      else if (step === 2) msgEl.innerText = "【配置換え】製品（型式）を読み込んでください";
+      else msgEl.innerText = "【配置換え】新ロケーションを読み込んでください";
+    } else if (currentMode === "ロケーション登録") {
+      msgEl.innerText = "【登録】登録するロケーションを読み込んでください";
+    }
+  }
+
+  function onScanSuccess(decodedText) {
+    // 同じ情報を直後に連続読み取りするのを防止
+    if (decodedText === lastScannedText) return;
+    lastScannedText = decodedText;
+
+    // スキャンした時点で一旦カメラを止めて確認を促す
+    html5QrcodeScanner.clear();
+
+    const msgEl = document.getElementById("status-message");
+    const confirmBtn = document.getElementById("confirm-btn");
+
+    if (currentMode === "入庫") {
+      if (step === 1) {
+        dataLog.location = decodedText;
+        msgEl.innerText = `ロケーション確認: ${decodedText}\nこのロケーションに登録しますか？`;
+      } else {
+        dataLog.model = decodedText;
+        msgEl.innerText = `型式確認: ${decodedText}\nこの型式を入庫しますか？`;
+      }
+    } else if (currentMode === "出庫") {
+      if (step === 1) {
+        dataLog.location = decodedText;
+        msgEl.innerText = `出荷元ロケーション: ${decodedText}\nこのロケーションの製品を出荷しますか？`;
+      } else {
+        dataLog.model = decodedText;
+        msgEl.innerText = `型式確認: ${decodedText}\n出荷しますか？`;
+      }
+    } else if (currentMode === "配置換え") {
+      if (step === 1) {
+        dataLog.location = decodedText;
+        msgEl.innerText = `移動元ロケーション: ${decodedText}\nこのロケーションから移動しますか？`;
+      } else if (step === 2) {
+        dataLog.model = decodedText;
+        msgEl.innerText = `移動製品（型式）: ${decodedText}\nこの製品を移動しますか？`;
+      } else {
+        dataLog.newLocation = decodedText;
+        msgEl.innerText = `移動先ロケーション: ${decodedText}\nここに配置を換えますか？`;
+      }
+    } else if (currentMode === "ロケーション登録") {
+      dataLog.location = decodedText;
+      msgEl.innerText = `新規ロケーション: ${decodedText}\nこの内容を登録しますか？`;
+    }
+
+    confirmBtn.style.display = "block";
+  }
+
+  function handleConfirmation() {
+    document.getElementById("confirm-btn").style.display = "none";
+
+    // 各モードでのステップ進行および最終送信処理
+    if (currentMode === "入庫") {
+      if (step === 1) {
+        step = 2;
+        lastScannedText = "";
+        updateGuideMessage();
+        startScanner();
+      } else {
+        sendDataToBackend();
+      }
+    } else if (currentMode === "出庫") {
+      if (step === 1) {
+        step = 2;
+        lastScannedText = "";
+        updateGuideMessage();
+        startScanner();
+      } else {
+        sendDataToBackend();
+      }
+    } else if (currentMode === "配置換え") {
+      if (step === 1 || step === 2) {
+        step++;
+        lastScannedText = "";
+        updateGuideMessage();
+        startScanner();
+      } else {
+        sendDataToBackend();
+      }
+    } else if (currentMode === "ロケーション登録") {
+      sendDataToBackend();
+    }
+  }
+
+  function sendDataToBackend() {
+    const msgEl = document.getElementById("status-message");
+    msgEl.innerText = "通信中...";
+
+    fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode: currentMode,
+        location: dataLog.location,
+        model: dataLog.model,
+        newLocation: dataLog.newLocation
+      })
+    })
+    .then(res => res.json())
+    .then(resData => {
+      if (resData.status === "success") {
+        msgEl.innerText = resData.message || "処理が完了しました！";
+        setTimeout(resetFlow, 3000);
+      } else {
+        msgEl.innerText = "⚠️ 警告: " + resData.message;
+        // 警告後、再度読み取りステップをやり直す
+        setTimeout(() => {
+          lastScannedText = "";
+          updateGuideMessage();
+          startScanner();
+        }, 4000);
+      }
+    })
+    .catch(err => {
+      console.error(err);
+      msgEl.innerText = "通信エラーが発生しました。";
+      setTimeout(resetFlow, 3000);
+    });
+  }
+
+  function startScanner() {
+    if (html5QrcodeScanner) {
+      html5QrcodeScanner.clear();
+    }
+    html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 12, qrbox: 250 });
+    html5QrcodeScanner.render(onScanSuccess);
+  }
+
+  // 初期起動
+  window.onload = () => { resetFlow(); };
+</script>
+
 </body>
 </html>
