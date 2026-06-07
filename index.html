@@ -36,7 +36,8 @@
 </div>
 
 <script>
-  const API_URL = "https://script.google.com/macros/s/AKfycbzB-uxZzKwZMbgxkDVtcncDfBpLeyRSb1mPWOUmIpMOuzhVfGQI0q0mo2091-jRIgj66g/exec";
+  // 💡 ここに新しくデプロイして取得した最新のGASウェブアプリURLを貼り付けてください
+  const API_URL = "https://script.google.com/macros/s/AKfycbwfjYqsEPbYL02cNfPJPqtjdVW3MVpZ7Puxjv3ueGEL0S82EQJK30aH4pad-QiEN6v9pg/exec";
 
   let html5QrcodeScanner;
   let currentMode = "入庫";
@@ -59,9 +60,17 @@
     step = 1;
     lastScannedText = "";
     dataLog = { location: "", model: "", newLocation: "" };
-    // 【修正】削除した確認ボタンの操作処理（エラーの原因）を消去しました
     updateGuideMessage();
-    startScanner();
+    
+    if (html5QrcodeScanner) {
+      html5QrcodeScanner.clear().then(() => {
+        setTimeout(startScanner, 300);
+      }).catch(() => {
+        startScanner();
+      });
+    } else {
+      startScanner();
+    }
   }
 
   function updateGuideMessage() {
@@ -70,7 +79,7 @@
       msgEl.innerText = step === 1 ? "【入庫】ロケーションを読み込んでください" : "【入庫】型式を読み込んでください";
     } else if (currentMode === "出庫") {
       msgEl.innerText = step === 1 ? "【出庫】ロケーションを読み込んでください" : "【出庫】型式を読み込んでください";
-    } else if (currentMode === "配置替え") { // 【修正】「替え」に統一
+    } else if (currentMode === "配置替え") {
       if (step === 1) msgEl.innerText = "【配置替え】元ロケーションを読み込んでください";
       else if (step === 2) msgEl.innerText = "【配置替え】製品（型式）を読み込んでください";
       else msgEl.innerText = "【配置替え】新ロケーションを読み込んでください";
@@ -80,14 +89,22 @@
   }
 
   function onScanSuccess(decodedText) {
-    // 同じ情報を直後に連続読み取りするのを防止
     if (decodedText === lastScannedText) return;
     lastScannedText = decodedText;
 
-    // スキャンした時点で一旦カメラを止めて確認を促す
-    html5QrcodeScanner.clear();
+    // スキャナーをクリアしてからダイアログを出す（カメラの競合を防ぐ）
+    if (html5QrcodeScanner) {
+      html5QrcodeScanner.clear().then(() => {
+        showConfirmDialog(decodedText);
+      }).catch(() => {
+        showConfirmDialog(decodedText);
+      });
+    } else {
+      showConfirmDialog(decodedText);
+    }
+  }
 
-    // 表示用メッセージの作成
+  function showConfirmDialog(decodedText) {
     let confirmMessage = "";
     if (currentMode === "入庫") {
       if (step === 1) {
@@ -105,7 +122,7 @@
         dataLog.model = decodedText;
         confirmMessage = `型式確認: ${decodedText}\n\n出荷しますか？`;
       }
-    } else if (currentMode === "配置替え") { // 【修正】「替え」に統一
+    } else if (currentMode === "配置替え") {
       if (step === 1) {
         dataLog.location = decodedText;
         confirmMessage = `移動元ロケーション: ${decodedText}\n\nこのロケーションから移動しますか？`;
@@ -121,7 +138,6 @@
       confirmMessage = `新規ロケーション: ${decodedText}\n\nこの内容を登録しますか？`;
     }
 
-    // 「はい(OK)」「いいえ(キャンセル)」の2択ダイアログを表示
     const userConfirmed = confirm(confirmMessage);
 
     if (userConfirmed) {
@@ -129,7 +145,7 @@
     } else {
       lastScannedText = ""; 
       updateGuideMessage();
-      startScanner();       
+      setTimeout(startScanner, 300);       
     }
   }
 
@@ -139,8 +155,8 @@
         step = 2;
         lastScannedText = "";
         updateGuideMessage();
-        // カメラが完全に終了するのを少し待ってから再起動（不具合①の対策）
-        setTimeout(startScanner, 300); 
+        // 前のカメラ終了を待って確実に型式スキャンを起動する（不具合①の対策）
+        setTimeout(startScanner, 500); 
       } else {
         sendDataToBackend();
       }
@@ -149,7 +165,7 @@
         step = 2;
         lastScannedText = "";
         updateGuideMessage();
-        setTimeout(startScanner, 300); 
+        setTimeout(startScanner, 500); 
       } else {
         sendDataToBackend();
       }
@@ -158,7 +174,7 @@
         step++;
         lastScannedText = "";
         updateGuideMessage();
-        setTimeout(startScanner, 300); 
+        setTimeout(startScanner, 500); 
       } else {
         sendDataToBackend();
       }
@@ -191,21 +207,18 @@
         setTimeout(() => {
           lastScannedText = "";
           updateGuideMessage();
-          startScanner();
+          setTimeout(startScanner, 500);
         }, 4000);
       }
     })
     .catch(err => {
       console.error(err);
-      msgEl.innerText = "通信エラーが発生しました。";
-      setTimeout(resetFlow, 3000);
+      msgEl.innerText = "通信エラーが発生しました。GASの新しいデプロイとURLを確認してください。";
+      setTimeout(resetFlow, 4000);
     });
   }
 
   function startScanner() {
-    if (html5QrcodeScanner) {
-      html5QrcodeScanner.clear();
-    }
     html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 12, qrbox: 250 });
     html5QrcodeScanner.render(onScanSuccess);
   }
