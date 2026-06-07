@@ -36,8 +36,7 @@
 </div>
 
 <script>
-  // 💡 あなたの完成しているVercelのAPIエンドポイントURL、または直接GASのウェブアプリURLを指定してください
-  const API_URL = "https://script.google.com/macros/s/AKfycbyZlHIzGrOf0YZqyY7zvG7TAImwRwIIA3gm3D1JN0UcDZ7E0PBD2cvqMb340yioKdFruA/exec";
+  const API_URL = "https://script.google.com/macros/s/AKfycbwEhI97lriJF0HujbrM4b2BVOC4Rxg0S-p0QrPZ5fVyRR4y4FuhOlThqlSR_3a0RH5ilA/exec";
 
   let html5QrcodeScanner;
   let currentMode = "入庫";
@@ -60,7 +59,7 @@
     step = 1;
     lastScannedText = "";
     dataLog = { location: "", model: "", newLocation: "" };
-    document.getElementById("confirm-btn").style.display = "none";
+    // 【修正】削除した確認ボタンの操作処理（エラーの原因）を消去しました
     updateGuideMessage();
     startScanner();
   }
@@ -71,10 +70,10 @@
       msgEl.innerText = step === 1 ? "【入庫】ロケーションを読み込んでください" : "【入庫】型式を読み込んでください";
     } else if (currentMode === "出庫") {
       msgEl.innerText = step === 1 ? "【出庫】ロケーションを読み込んでください" : "【出庫】型式を読み込んでください";
-    } else if (currentMode === "配置換え") {
-      if (step === 1) msgEl.innerText = "【配置換え】元ロケーションを読み込んでください";
-      else if (step === 2) msgEl.innerText = "【配置換え】製品（型式）を読み込んでください";
-      else msgEl.innerText = "【配置換え】新ロケーションを読み込んでください";
+    } else if (currentMode === "配置替え") { // 【修正】「替え」に統一
+      if (step === 1) msgEl.innerText = "【配置替え】元ロケーションを読み込んでください";
+      else if (step === 2) msgEl.innerText = "【配置替え】製品（型式）を読み込んでください";
+      else msgEl.innerText = "【配置替え】新ロケーションを読み込んでください";
     } else if (currentMode === "ロケーション登録") {
       msgEl.innerText = "【登録】登録するロケーションを読み込んでください";
     }
@@ -106,7 +105,7 @@
         dataLog.model = decodedText;
         confirmMessage = `型式確認: ${decodedText}\n\n出荷しますか？`;
       }
-    } else if (currentMode === "配置換え") {
+    } else if (currentMode === "配置替え") { // 【修正】「替え」に統一
       if (step === 1) {
         dataLog.location = decodedText;
         confirmMessage = `移動元ロケーション: ${decodedText}\n\nこのロケーションから移動しますか？`;
@@ -122,21 +121,18 @@
       confirmMessage = `新規ロケーション: ${decodedText}\n\nこの内容を登録しますか？`;
     }
 
-    // 【改善①】「はい(OK)」「いいえ(キャンセル)」の2択ダイアログを表示
+    // 「はい(OK)」「いいえ(キャンセル)」の2択ダイアログを表示
     const userConfirmed = confirm(confirmMessage);
 
     if (userConfirmed) {
-      // ユーザーが「はい」を選んだ場合（次のステップ、またはGAS送信へ）
       proceedToNext();
     } else {
-      // ユーザーが「いいえ」を選んだ場合（読み取り直前から再開）
-      lastScannedText = ""; // 直前の記憶をクリア
+      lastScannedText = ""; 
       updateGuideMessage();
-      startScanner();       // カメラ再起動
+      startScanner();       
     }
   }
 
-  // ステップ進行、または送信処理を行う関数（旧handleConfirmationの代わり）
   function proceedToNext() {
     if (currentMode === "入庫") {
       if (step === 1) {
@@ -156,7 +152,7 @@
       } else {
         sendDataToBackend();
       }
-    } else if (currentMode === "配置換え") {
+    } else if (currentMode === "配置替え") { // 【修正】「替え」に統一
       if (step === 1 || step === 2) {
         step++;
         lastScannedText = "";
@@ -191,7 +187,6 @@
         setTimeout(resetFlow, 3000);
       } else {
         msgEl.innerText = "⚠️ 警告: " + resData.message;
-        // 警告後、再度読み取りステップをやり直す
         setTimeout(() => {
           lastScannedText = "";
           updateGuideMessage();
@@ -214,7 +209,6 @@
     html5QrcodeScanner.render(onScanSuccess);
   }
 
-  // 初期起動
   window.onload = () => { resetFlow(); };
 </script>
 
