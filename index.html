@@ -33,12 +33,11 @@
 
   <div id="reader"></div>
 
-  <button id="confirm-btn" class="btn-action" onclick="handleConfirmation()">確認して次へ</button>
 </div>
 
 <script>
   // 💡 あなたの完成しているVercelのAPIエンドポイントURL、または直接GASのウェブアプリURLを指定してください
-  const API_URL = "https://script.google.com/macros/s/AKfycbyJKfFUNuMo-SVtWzO1N7hf4f0nLpTddZkRp2mOAAaBgKQSDcMUn-a5IDrRjNSvu4lXEQ/exec";
+  const API_URL = "https://script.google.com/macros/s/AKfycbyZlHIzGrOf0YZqyY7zvG7TAImwRwIIA3gm3D1JN0UcDZ7E0PBD2cvqMb340yioKdFruA/exec";
 
   let html5QrcodeScanner;
   let currentMode = "入庫";
@@ -89,48 +88,56 @@
     // スキャンした時点で一旦カメラを止めて確認を促す
     html5QrcodeScanner.clear();
 
-    const msgEl = document.getElementById("status-message");
-    const confirmBtn = document.getElementById("confirm-btn");
-
+    // 表示用メッセージの作成
+    let confirmMessage = "";
     if (currentMode === "入庫") {
       if (step === 1) {
         dataLog.location = decodedText;
-        msgEl.innerText = `ロケーション確認: ${decodedText}\nこのロケーションに登録しますか？`;
+        confirmMessage = `ロケーション確認: ${decodedText}\n\nこのロケーションに登録しますか？`;
       } else {
         dataLog.model = decodedText;
-        msgEl.innerText = `型式確認: ${decodedText}\nこの型式を入庫しますか？`;
+        confirmMessage = `型式確認: ${decodedText}\n\nこの型式を入庫しますか？`;
       }
     } else if (currentMode === "出庫") {
       if (step === 1) {
         dataLog.location = decodedText;
-        msgEl.innerText = `出荷元ロケーション: ${decodedText}\nこのロケーションの製品を出荷しますか？`;
+        confirmMessage = `出荷元ロケーション: ${decodedText}\n\nこのロケーションの製品を出荷しますか？`;
       } else {
         dataLog.model = decodedText;
-        msgEl.innerText = `型式確認: ${decodedText}\n出荷しますか？`;
+        confirmMessage = `型式確認: ${decodedText}\n\n出荷しますか？`;
       }
     } else if (currentMode === "配置換え") {
       if (step === 1) {
         dataLog.location = decodedText;
-        msgEl.innerText = `移動元ロケーション: ${decodedText}\nこのロケーションから移動しますか？`;
+        confirmMessage = `移動元ロケーション: ${decodedText}\n\nこのロケーションから移動しますか？`;
       } else if (step === 2) {
         dataLog.model = decodedText;
-        msgEl.innerText = `移動製品（型式）: ${decodedText}\nこの製品を移動しますか？`;
+        confirmMessage = `移動製品（型式）: ${decodedText}\n\nこの製品を移動しますか？`;
       } else {
         dataLog.newLocation = decodedText;
-        msgEl.innerText = `移動先ロケーション: ${decodedText}\nここに配置を換えますか？`;
+        confirmMessage = `移動先ロケーション: ${decodedText}\n\nここに配置を換えますか？`;
       }
     } else if (currentMode === "ロケーション登録") {
       dataLog.location = decodedText;
-      msgEl.innerText = `新規ロケーション: ${decodedText}\nこの内容を登録しますか？`;
+      confirmMessage = `新規ロケーション: ${decodedText}\n\nこの内容を登録しますか？`;
     }
 
-    confirmBtn.style.display = "block";
+    // 【改善①】「はい(OK)」「いいえ(キャンセル)」の2択ダイアログを表示
+    const userConfirmed = confirm(confirmMessage);
+
+    if (userConfirmed) {
+      // ユーザーが「はい」を選んだ場合（次のステップ、またはGAS送信へ）
+      proceedToNext();
+    } else {
+      // ユーザーが「いいえ」を選んだ場合（読み取り直前から再開）
+      lastScannedText = ""; // 直前の記憶をクリア
+      updateGuideMessage();
+      startScanner();       // カメラ再起動
+    }
   }
 
-  function handleConfirmation() {
-    document.getElementById("confirm-btn").style.display = "none";
-
-    // 各モードでのステップ進行および最終送信処理
+  // ステップ進行、または送信処理を行う関数（旧handleConfirmationの代わり）
+  function proceedToNext() {
     if (currentMode === "入庫") {
       if (step === 1) {
         step = 2;
