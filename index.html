@@ -36,7 +36,7 @@
 </div>
 
 <script>
-  const API_URL = "https://script.google.com/macros/s/AKfycbwEhI97lriJF0HujbrM4b2BVOC4Rxg0S-p0QrPZ5fVyRR4y4FuhOlThqlSR_3a0RH5ilA/exec";
+  const API_URL = "https://script.google.com/macros/s/AKfycbxNLMIeAya-Q9DiDHF9p3RGV3hjS4fhb1sc33gDNrXM2w0SfGCtysInCTRAY0hlnsdymg/exec";
 
   let html5QrcodeScanner;
   let currentMode = "入庫";
@@ -139,7 +139,8 @@
         step = 2;
         lastScannedText = "";
         updateGuideMessage();
-        startScanner();
+        // カメラが完全に終了するのを少し待ってから再起動（不具合①の対策）
+        setTimeout(startScanner, 300); 
       } else {
         sendDataToBackend();
       }
@@ -148,16 +149,16 @@
         step = 2;
         lastScannedText = "";
         updateGuideMessage();
-        startScanner();
+        setTimeout(startScanner, 300); 
       } else {
         sendDataToBackend();
       }
-    } else if (currentMode === "配置替え") { // 【修正】「替え」に統一
+    } else if (currentMode === "配置替え") {
       if (step === 1 || step === 2) {
         step++;
         lastScannedText = "";
         updateGuideMessage();
-        startScanner();
+        setTimeout(startScanner, 300); 
       } else {
         sendDataToBackend();
       }
