@@ -36,7 +36,7 @@
 </div>
 
 <script>
-  // 💡 ここに新しくデプロイして取得した最新のGASウェブアプリURLを貼り付けてください
+  // 正しい最新のGASウェブアプリURLを設定済み
   const API_URL = "https://script.google.com/macros/s/AKfycbyL7rA2_XSpqJ0qnqp1mE-wQasfoZ6fWFZYyarCTpMX4mF1sFKrHFGpSMTY9NaY-EftMQ/exec";
 
   let html5QrcodeScanner;
@@ -44,7 +44,6 @@
   let step = 1; 
   let lastScannedText = "";
 
-  // 各種データを一時保持する変数
   let dataLog = {
     location: "",
     model: "",
@@ -62,14 +61,15 @@
     dataLog = { location: "", model: "", newLocation: "" };
     updateGuideMessage();
     
+    // 安全にカメラをクリアしてから再起動
     if (html5QrcodeScanner) {
       html5QrcodeScanner.clear().then(() => {
         setTimeout(startScanner, 300);
       }).catch(() => {
-        startScanner();
+        setTimeout(startScanner, 300);
       });
     } else {
-      startScanner();
+      setTimeout(startScanner, 300);
     }
   }
 
@@ -92,7 +92,7 @@
     if (decodedText === lastScannedText) return;
     lastScannedText = decodedText;
 
-    // スキャナーをクリアしてからダイアログを出す（カメラの競合を防ぐ）
+    // ダイアログを表示する前にカメラを完全に停止させる
     if (html5QrcodeScanner) {
       html5QrcodeScanner.clear().then(() => {
         showConfirmDialog(decodedText);
@@ -155,7 +155,6 @@
         step = 2;
         lastScannedText = "";
         updateGuideMessage();
-        // 前のカメラ終了を待って確実に型式スキャンを起動する（不具合①の対策）
         setTimeout(startScanner, 500); 
       } else {
         sendDataToBackend();
@@ -213,14 +212,19 @@
     })
     .catch(err => {
       console.error(err);
-      msgEl.innerText = "通信エラーが発生しました。GASの新しいデプロイとURLを確認してください。";
+      msgEl.innerText = "通信エラーが発生しました。GASのデプロイURLと権限を確認してください。";
       setTimeout(resetFlow, 4000);
     });
   }
 
+  // エラーを防止する確実なカメラ起動関数
   function startScanner() {
-    html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 12, qrbox: 250 });
-    html5QrcodeScanner.render(onScanSuccess);
+    try {
+      html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 12, qrbox: 250 });
+      html5QrcodeScanner.render(onScanSuccess);
+    } catch (e) {
+      console.log("Scanner init error, retrying...", e);
+    }
   }
 
   window.onload = () => { resetFlow(); };
