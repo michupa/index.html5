@@ -9,12 +9,9 @@
     body { font-family: 'Helvetica Neue', Arial, sans-serif; text-align: center; margin: 0; padding: 20px; background-color: #f4f6f9; color: #333; }
     .container { max-width: 600px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
     h1 { font-size: 1.5rem; margin-bottom: 20px; color: #1e3a8a; }
-    select, button { width: 100%; padding: 12px; font-size: 1rem; border-radius: 8px; border: 1px solid #cbd5e1; margin-bottom: 15px; box-sizing: border-box; }
-    select { background-color: #fff; cursor: pointer; font-weight: bold; }
-    #reader { width: 100%; border-radius: 8px; overflow: hidden; margin-bottom: 15px; border: 1px solid #e2e8f0; }
+    select { width: 100%; padding: 12px; font-size: 1rem; border-radius: 8px; border: 1px solid #cbd5e1; margin-bottom: 15px; box-sizing: border-box; background-color: #fff; cursor: pointer; font-weight: bold; }
+    #reader { width: 100%; border-radius: 8px; overflow: hidden; margin-bottom: 15px; border: 1px solid #e2e8f0; min-height: 250px; background-color: #ebebeb; }
     #status-message { font-size: 1.1rem; font-weight: bold; color: #2563eb; padding: 10px; background: #eff6ff; border-radius: 6px; margin-bottom: 15px; min-height: 24px; }
-    .btn-action { background-color: #2563eb; color: white; border: none; font-weight: bold; cursor: pointer; display: none; }
-    .btn-action:hover { background-color: #1d4ed8; }
   </style>
 </head>
 <body>
@@ -29,26 +26,19 @@
     <option value="ロケーション登録">④ ロケーション登録</option>
   </select>
 
-  <div id="status-message">モードを選択してください</div>
-
+  <div id="status-message">システムを初期化中...</div>
   <div id="reader"></div>
-
 </div>
 
 <script>
   const API_URL = "https://script.google.com/macros/s/AKfycbxykj9XOMDFVdOhHe5AD_ch5Oa0gY25wi6yDC7q4itLYk4zgNCiWQvRKUR0iB1kdyd3CA/exec";
 
-  let html5QrcodeScanner;
+  let html5QrcodeScanner = null;
   let currentMode = "入庫";
   let step = 1; 
-  let lastScannedText = "";
-  let isProcessing = false; // ★ 連続送信（暴走）を防ぐためのロックフラグ
+  let isProcessing = false; 
 
-  let dataLog = {
-    location: "",
-    model: "",
-    newLocation: ""
-  };
+  let dataLog = { location: "", model: "", newLocation: "" };
 
   function onModeChange() {
     currentMode = document.getElementById("mode-select").value;
@@ -57,47 +47,51 @@
 
   function resetFlow() {
     step = 1;
-    lastScannedText = "";
-    isProcessing = false; // ロック解除
+    isProcessing = false;
     dataLog = { location: "", model: "", newLocation: "" };
     updateGuideMessage();
     
+    // カメラを安全に停止させてから再起動する（競合バグ対策）
     if (html5QrcodeScanner) {
       html5QrcodeScanner.clear().then(() => {
-        setTimeout(startScanner, 300);
-      }).catch(() => {
-        setTimeout(startScanner, 300);
+        html5QrcodeScanner = null;
+        setTimeout(startScanner, 400);
+      }).catch(err => {
+        console.log("Scanner clear error, forcing restart...", err);
+        html5QrcodeScanner = null;
+        setTimeout(startScanner, 400);
       });
     } else {
-      setTimeout(startScanner, 300);
+      setTimeout(startScanner, 400);
     }
   }
 
   function updateGuideMessage() {
     const msgEl = document.getElementById("status-message");
     if (currentMode === "入庫") {
-      msgEl.innerText = step === 1 ? "【入庫】ロケーションを読み込んでください" : "【入庫】型式を読み込んでください";
+      msgEl.innerText = step === 1 ? "【入庫】ロケーションをスキャンしてください" : "【入庫】型式をスキャンしてください";
     } else if (currentMode === "出庫") {
-      msgEl.innerText = step === 1 ? "【出庫】ロケーションを読み込んでください" : "【出庫】型式を読み込んでください";
+      msgEl.innerText = step === 1 ? "【出庫】ロケーションをスキャンしてください" : "【出庫】型式をスキャンしてください";
     } else if (currentMode === "配置替え") {
-      if (step === 1) msgEl.innerText = "【配置替え】元ロケーションを読み込んでください";
-      else if (step === 2) msgEl.innerText = "【配置替え】製品（型式）を読み込んでください";
-      else msgEl.innerText = "【配置替え】新ロケーションを読み込んでください";
+      if (step === 1) msgEl.innerText = "【配置替え】移動元のロケーションをスキャン";
+      else if (step === 2) msgEl.innerText = "【配置替え】製品（型式）をスキャン";
+      else msgEl.innerText = "【配置替え】移動先の新ロケーションをスキャン";
     } else if (currentMode === "ロケーション登録") {
-      msgEl.innerText = "【登録】登録するロケーションを読み込んでください";
+      msgEl.innerText = "【登録】新規登録するロケーションをスキャンしてください";
     }
   }
 
   function onScanSuccess(decodedText) {
-    // 処理中、または同じテキストなら無視する
-    if (isProcessing || decodedText === lastScannedText) return;
-    isProcessing = true; // ★ 即座にロックをかけ、2回目の読み込みをブロックする
-    lastScannedText = decodedText;
+    if (isProcessing) return; 
+    isProcessing = true; // ★スキャン直後に即座にロックをかけ、連続読み込みを強制停止
 
+    // カメラの読み込みを一瞬ストップさせてダイアログに集中させる
     if (html5QrcodeScanner) {
       html5QrcodeScanner.clear().then(() => {
+        html5QrcodeScanner = null;
         showConfirmDialog(decodedText);
       }).catch(() => {
+        html5QrcodeScanner = null;
         showConfirmDialog(decodedText);
       });
     } else {
@@ -107,90 +101,77 @@
 
   function showConfirmDialog(decodedText) {
     let confirmMessage = "";
+    
     if (currentMode === "入庫") {
       if (step === 1) {
         dataLog.location = decodedText;
-        confirmMessage = `ロケーション確認: ${decodedText}\n\nこのロケーションに登録しますか？`;
+        confirmMessage = `入庫先ロケーション: ${decodedText}\n\nこの場所を選択しますか？`;
       } else {
         dataLog.model = decodedText;
-        confirmMessage = `型式確認: ${decodedText}\n\nこの型式を入庫しますか？`;
+        confirmMessage = `型式: ${decodedText}\nロケーション: ${dataLog.location}\n\nこの内容で入庫を確定しますか？`;
       }
     } else if (currentMode === "出庫") {
       if (step === 1) {
         dataLog.location = decodedText;
-        confirmMessage = `出荷元ロケーション: ${decodedText}\n\nこのロケーションの製品を出荷しますか？`;
+        confirmMessage = `出庫元ロケーション: ${decodedText}\n\nこの場所から出庫しますか？`;
       } else {
         dataLog.model = decodedText;
-        confirmMessage = `型式確認: ${decodedText}\n\n出荷しますか？`;
+        confirmMessage = `型式: ${decodedText}\nロケーション: ${dataLog.location}\n\nこの製品を出庫しますか？`;
       }
     } else if (currentMode === "配置替え") {
       if (step === 1) {
         dataLog.location = decodedText;
-        confirmMessage = `移動元ロケーション: ${decodedText}\n\nこのロケーションから移動しますか？`;
+        confirmMessage = `移動元ロケーション: ${decodedText}\n\nここから移動しますか？`;
       } else if (step === 2) {
         dataLog.model = decodedText;
-        confirmMessage = `移動製品（型式）: ${decodedText}\n\nこの製品を移動しますか？`;
+        confirmMessage = `型式: ${decodedText}\n\nこの製品を移動しますか？`;
       } else {
         dataLog.newLocation = decodedText;
-        confirmMessage = `移動先ロケーション: ${decodedText}\n\nここに配置を換えますか？`;
+        confirmMessage = `新ロケーション: ${decodedText}\n\nここに配置を換えますか？`;
       }
     } else if (currentMode === "ロケーション登録") {
       dataLog.location = decodedText;
-      confirmMessage = `新規ロケーション: ${decodedText}\n\nこの内容を登録しますか？`;
+      confirmMessage = `新規ロケーション: ${decodedText}\n\nこの場所をマスター(D列)に登録しますか？`;
     }
 
+    // ダイアログを表示
     const userConfirmed = confirm(confirmMessage);
 
     if (userConfirmed) {
       proceedToNext();
     } else {
-      // キャンセルされた場合はロックを解除して再開
+      // キャンセルされたら状態を戻してカメラを再開
       isProcessing = false;
-      lastScannedText = ""; 
       updateGuideMessage();
-      setTimeout(startScanner, 300);       
+      setTimeout(startScanner, 400);       
     }
   }
 
   function proceedToNext() {
-    if (currentMode === "入庫") {
-      if (step === 1) {
-        step = 2;
-        lastScannedText = "";
-        isProcessing = false; // 次のステップのためにロック解除
-        updateGuideMessage();
-        setTimeout(startScanner, 500); 
-      } else {
-        sendDataToBackend();
-      }
-    } else if (currentMode === "出庫") {
-      if (step === 1) {
-        step = 2;
-        lastScannedText = "";
-        isProcessing = false;
-        updateGuideMessage();
-        setTimeout(startScanner, 500); 
-      } else {
-        sendDataToBackend();
-      }
-    } else if (currentMode === "配置替え") {
-      if (step === 1 || step === 2) {
-        step++;
-        lastScannedText = "";
-        isProcessing = false;
-        updateGuideMessage();
-        setTimeout(startScanner, 500); 
-      } else {
-        sendDataToBackend();
-      }
-    } else if (currentMode === "ロケーション登録") {
+    if (currentMode === "入庫" && step === 1) {
+      step = 2;
+      isProcessing = false;
+      updateGuideMessage();
+      setTimeout(startScanner, 400); 
+    } else if (currentMode === "出庫" && step === 1) {
+      step = 2;
+      isProcessing = false;
+      updateGuideMessage();
+      setTimeout(startScanner, 400); 
+    } else if (currentMode === "配置替え" && (step === 1 || step === 2)) {
+      step++;
+      isProcessing = false;
+      updateGuideMessage();
+      setTimeout(startScanner, 400); 
+    } else {
+      // 最終ステップに達したらGASへ送信
       sendDataToBackend();
     }
   }
 
   function sendDataToBackend() {
     const msgEl = document.getElementById("status-message");
-    msgEl.innerText = "通信中...";
+    msgEl.innerText = "⏳ 通信中...";
 
     fetch(API_URL, {
       method: "POST",
@@ -203,33 +184,40 @@
         newLocation: dataLog.newLocation
       })
     })
-    .then(res => res.json())
-    .then(resData => {
-      // ★ ロックを解除
+    .then(res => {
+      if (!res.ok) throw new Error("Network response was not ok");
+      return res.text(); // ★一度テキストとして安全に受け取る
+    })
+    .then(textData => {
+      const resData = JSON.parse(textData); // ★テキストをJSONオブジェクトに変換
       isProcessing = false;
+
       if (resData.status === "success") {
-        msgEl.innerText = resData.message || "処理が完了しました！";
+        msgEl.style.color = "#16a34a"; // 成功時は緑文字
+        msgEl.innerText = "🎉 " + (resData.message || "完了しました！");
         setTimeout(resetFlow, 3000);
       } else {
-        msgEl.innerText = "⚠️ 警告: " + resData.message;
-        setTimeout(() => {
-          lastScannedText = "";
-          updateGuideMessage();
-          setTimeout(startScanner, 500);
-        }, 4000);
+        msgEl.style.color = "#dc2626"; // 警告は赤文字
+        msgEl.innerText = "⚠️ 制限: " + resData.message;
+        setTimeout(resetFlow, 4000);
       }
     })
     .catch(err => {
       console.error(err);
       isProcessing = false;
-      msgEl.innerText = "通信エラーが発生しました。GASのデプロイURLと権限を確認してください。";
+      msgEl.style.color = "#dc2626";
+      msgEl.innerText = "❌ 通信エラーが発生しました。もう一度お試しください。";
       setTimeout(resetFlow, 4000);
     });
   }
 
   function startScanner() {
+    if (html5QrcodeScanner) return;
     try {
-      html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 12, qrbox: 250 });
+      msgEl = document.getElementById("status-message");
+      if(msgEl.innerText === "システムを初期化中...") updateGuideMessage();
+      
+      html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250, rememberLastUsedCamera: true });
       html5QrcodeScanner.render(onScanSuccess);
     } catch (e) {
       console.log("Scanner init error, retrying...", e);
