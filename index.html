@@ -36,13 +36,13 @@
 </div>
 
 <script>
-  // 正しい最新のGASウェブアプリURLを設定済み
   const API_URL = "https://script.google.com/macros/s/AKfycbxykj9XOMDFVdOhHe5AD_ch5Oa0gY25wi6yDC7q4itLYk4zgNCiWQvRKUR0iB1kdyd3CA/exec";
 
   let html5QrcodeScanner;
   let currentMode = "入庫";
   let step = 1; 
   let lastScannedText = "";
+  let isProcessing = false; // ★ 連続送信（暴走）を防ぐためのロックフラグ
 
   let dataLog = {
     location: "",
@@ -58,10 +58,10 @@
   function resetFlow() {
     step = 1;
     lastScannedText = "";
+    isProcessing = false; // ロック解除
     dataLog = { location: "", model: "", newLocation: "" };
     updateGuideMessage();
     
-    // 安全にカメラをクリアしてから再起動
     if (html5QrcodeScanner) {
       html5QrcodeScanner.clear().then(() => {
         setTimeout(startScanner, 300);
@@ -89,10 +89,11 @@
   }
 
   function onScanSuccess(decodedText) {
-    if (decodedText === lastScannedText) return;
+    // 処理中、または同じテキストなら無視する
+    if (isProcessing || decodedText === lastScannedText) return;
+    isProcessing = true; // ★ 即座にロックをかけ、2回目の読み込みをブロックする
     lastScannedText = decodedText;
 
-    // ダイアログを表示する前にカメラを完全に停止させる
     if (html5QrcodeScanner) {
       html5QrcodeScanner.clear().then(() => {
         showConfirmDialog(decodedText);
@@ -143,6 +144,8 @@
     if (userConfirmed) {
       proceedToNext();
     } else {
+      // キャンセルされた場合はロックを解除して再開
+      isProcessing = false;
       lastScannedText = ""; 
       updateGuideMessage();
       setTimeout(startScanner, 300);       
@@ -154,6 +157,7 @@
       if (step === 1) {
         step = 2;
         lastScannedText = "";
+        isProcessing = false; // 次のステップのためにロック解除
         updateGuideMessage();
         setTimeout(startScanner, 500); 
       } else {
@@ -163,6 +167,7 @@
       if (step === 1) {
         step = 2;
         lastScannedText = "";
+        isProcessing = false;
         updateGuideMessage();
         setTimeout(startScanner, 500); 
       } else {
@@ -172,6 +177,7 @@
       if (step === 1 || step === 2) {
         step++;
         lastScannedText = "";
+        isProcessing = false;
         updateGuideMessage();
         setTimeout(startScanner, 500); 
       } else {
@@ -189,7 +195,7 @@
     fetch(API_URL, {
       method: "POST",
       mode: "cors",
-      headers: { "Content-Type": "text/plain" }, // ★ 予備通信（CORSエラー）を回避するため text/plain に修正
+      headers: { "Content-Type": "text/plain" }, 
       body: JSON.stringify({
         mode: currentMode,
         location: dataLog.location,
@@ -199,6 +205,8 @@
     })
     .then(res => res.json())
     .then(resData => {
+      // ★ ロックを解除
+      isProcessing = false;
       if (resData.status === "success") {
         msgEl.innerText = resData.message || "処理が完了しました！";
         setTimeout(resetFlow, 3000);
@@ -213,12 +221,12 @@
     })
     .catch(err => {
       console.error(err);
+      isProcessing = false;
       msgEl.innerText = "通信エラーが発生しました。GASのデプロイURLと権限を確認してください。";
       setTimeout(resetFlow, 4000);
     });
   }
 
-  // エラーを防止する確実なカメラ起動関数
   function startScanner() {
     try {
       html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 12, qrbox: 250 });
