@@ -188,7 +188,8 @@
 
     fetch(API_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      mode: "cors",
+      headers: { "Content-Type": "text/plain" }, // ★ 予備通信（CORSエラー）を回避するため text/plain に修正
       body: JSON.stringify({
         mode: currentMode,
         location: dataLog.location,
