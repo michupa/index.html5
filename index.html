@@ -31,7 +31,6 @@
 </div>
 
 <script>
-  // ★GASのWebアプリURL（固定）
   const API_URL = "https://script.google.com/macros/s/AKfycbxykj9XOMDFVdOhHe5AD_ch5Oa0gY25wi6yDC7q4itLYk4zgNCiWQvRKUR0iB1kdyd3CA/exec";
 
   let html5QrcodeScanner = null;
@@ -165,33 +164,30 @@
     }
   }
 
-  // ★URLエンコード形式（x-www-form-urlencoded）で確実に送信する関数
   function sendDataToBackend() {
     const msgEl = document.getElementById("status-message");
     msgEl.innerText = "⏳ 通信中...";
 
-    const params = new URLSearchParams();
-    params.append("mode", currentMode);
-    params.append("location", dataLog.location);
-    params.append("model", dataLog.model);
-    params.append("newLocation", dataLog.newLocation);
-
     fetch(API_URL, {
       method: "POST",
-      mode: "cors", 
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded"
-      },
-      body: params.toString()
+      mode: "cors",
+      headers: { "Content-Type": "text/plain" }, 
+      body: JSON.stringify({
+        mode: currentMode,
+        location: dataLog.location,
+        model: dataLog.model,
+        newLocation: dataLog.newLocation
+      })
     })
     .then(res => {
       if (!res.ok) throw new Error("Network response was not ok");
-      return res.json(); 
+      return res.text(); 
     })
-    .then(resData => {
+    .then(textData => {
+      const resData = JSON.parse(textData); 
       isProcessing = false;
 
-      if (resData.status === "success" || resData.SUCCESS === "SUCCESS") {
+      if (resData.status === "success") {
         msgEl.style.color = "#16a34a"; 
         msgEl.innerText = "🎉 " + (resData.message || "完了しました！");
         setTimeout(resetFlow, 3000);
@@ -213,7 +209,7 @@
   function startScanner() {
     if (html5QrcodeScanner) return;
     try {
-      const msgEl = document.getElementById("status-message");
+      msgEl = document.getElementById("status-message");
       if(msgEl.innerText === "システムを初期化中...") updateGuideMessage();
       
       html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250, rememberLastUsedCamera: true });
