@@ -31,6 +31,7 @@
 </div>
 
 <script>
+  // ★GASのWebアプリURL（固定）
   const API_URL = "https://script.google.com/macros/s/AKfycbxykj9XOMDFVdOhHe5AD_ch5Oa0gY25wi6yDC7q4itLYk4zgNCiWQvRKUR0iB1kdyd3CA/exec";
 
   let html5QrcodeScanner = null;
@@ -51,7 +52,6 @@
     dataLog = { location: "", model: "", newLocation: "" };
     updateGuideMessage();
     
-    // カメラを安全に停止させてから再起動する（競合バグ対策）
     if (html5QrcodeScanner) {
       html5QrcodeScanner.clear().then(() => {
         html5QrcodeScanner = null;
@@ -83,9 +83,8 @@
 
   function onScanSuccess(decodedText) {
     if (isProcessing) return; 
-    isProcessing = true; // ★スキャン直後に即座にロックをかけ、連続読み込みを強制停止
+    isProcessing = true; 
 
-    // カメラの読み込みを一瞬ストップさせてダイアログに集中させる
     if (html5QrcodeScanner) {
       html5QrcodeScanner.clear().then(() => {
         html5QrcodeScanner = null;
@@ -134,13 +133,11 @@
       confirmMessage = `新規ロケーション: ${decodedText}\n\nこの場所をマスター(D列)に登録しますか？`;
     }
 
-    // ダイアログを表示
     const userConfirmed = confirm(confirmMessage);
 
     if (userConfirmed) {
       proceedToNext();
     } else {
-      // キャンセルされたら状態を戻してカメラを再開
       isProcessing = false;
       updateGuideMessage();
       setTimeout(startScanner, 400);       
@@ -164,40 +161,42 @@
       updateGuideMessage();
       setTimeout(startScanner, 400); 
     } else {
-      // 最終ステップに達したらGASへ送信
       sendDataToBackend();
     }
   }
 
+  // ★URLエンコード形式（x-www-form-urlencoded）で確実に送信する関数
   function sendDataToBackend() {
     const msgEl = document.getElementById("status-message");
     msgEl.innerText = "⏳ 通信中...";
 
+    const params = new URLSearchParams();
+    params.append("mode", currentMode);
+    params.append("location", dataLog.location);
+    params.append("model", dataLog.model);
+    params.append("newLocation", dataLog.newLocation);
+
     fetch(API_URL, {
       method: "POST",
-      mode: "cors",
-      headers: { "Content-Type": "text/plain" }, 
-      body: JSON.stringify({
-        mode: currentMode,
-        location: dataLog.location,
-        model: dataLog.model,
-        newLocation: dataLog.newLocation
-      })
+      mode: "cors", 
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: params.toString()
     })
     .then(res => {
       if (!res.ok) throw new Error("Network response was not ok");
-      return res.text(); // ★一度テキストとして安全に受け取る
+      return res.json(); 
     })
-    .then(textData => {
-      const resData = JSON.parse(textData); // ★テキストをJSONオブジェクトに変換
+    .then(resData => {
       isProcessing = false;
 
-      if (resData.status === "success") {
-        msgEl.style.color = "#16a34a"; // 成功時は緑文字
+      if (resData.status === "success" || resData.SUCCESS === "SUCCESS") {
+        msgEl.style.color = "#16a34a"; 
         msgEl.innerText = "🎉 " + (resData.message || "完了しました！");
         setTimeout(resetFlow, 3000);
       } else {
-        msgEl.style.color = "#dc2626"; // 警告は赤文字
+        msgEl.style.color = "#dc2626"; 
         msgEl.innerText = "⚠️ 制限: " + resData.message;
         setTimeout(resetFlow, 4000);
       }
@@ -214,7 +213,7 @@
   function startScanner() {
     if (html5QrcodeScanner) return;
     try {
-      msgEl = document.getElementById("status-message");
+      const msgEl = document.getElementById("status-message");
       if(msgEl.innerText === "システムを初期化中...") updateGuideMessage();
       
       html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250, rememberLastUsedCamera: true });
