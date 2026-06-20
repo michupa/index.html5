@@ -1,167 +1,398 @@
-function doPost(e) {
-  const headers = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Accept, Origin, X-Requested-With",
-    "Access-Control-Max-Age": "86400"
-  };
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QR管理システム</title>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <style>
+    body { font-family: 'Helvetica Neue', Arial, sans-serif; text-align: center; margin: 0; padding: 20px; background-color: #f4f6f9; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+    h1 { font-size: 1.5rem; margin-bottom: 20px; color: #1e3a8a; }
+    select { width: 100%; padding: 12px; font-size: 1rem; border-radius: 8px; border: 1px solid #cbd5e1; margin-bottom: 15px; box-sizing: border-box; background-color: #fff; cursor: pointer; font-weight: bold; }
+    #reader { width: 100%; border-radius: 8px; overflow: hidden; margin-bottom: 15px; border: 1px solid #e2e8f0; min-height: 250px; background-color: #ebebeb; }
+    #status-message { font-size: 1.1rem; font-weight: bold; color: #2563eb; padding: 10px; background: #eff6ff; border-radius: 6px; margin-bottom: 15px; min-height: 24px; }
+    
+    .hidden { display: none; }
+    .btn-toggle { background-color: #64748b; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-size: 0.95rem; cursor: pointer; font-weight: bold; margin-bottom: 15px; width: 100%; }
+    .btn-toggle:hover { background-color: #475569; }
+    .manual-box { background: #f8fafc; border: 1px solid #e2e8f0; padding: 15px; border-radius: 8px; margin-bottom: 15px; text-align: left; }
+    .manual-box label { font-size: 0.9rem; font-weight: bold; color: #475569; display: block; margin-top: 10px; }
+    .manual-box label:first-child { margin-top: 0; }
+    .input-field { width: 100%; padding: 10px; margin-top: 5px; border-radius: 6px; border: 1px solid #cbd5e1; box-sizing: border-box; font-size: 1rem; }
+    .btn-submit { background-color: #10b981; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 1rem; cursor: pointer; font-weight: bold; width: 100%; margin-top: 15px; }
+    .btn-submit:hover { background-color: #059669; }
+  </style>
+</head>
+<body>
 
-  function sendResponse(status, message) {
-    var output = ContentService.createTextOutput(
-      JSON.stringify({ status: status, message: message })
-    ).setMimeType(ContentService.MimeType.TEXT);
-    return output;
+<div class="container">
+  <h1>物品管理 QRシステム</h1>
+  
+  <select id="mode-select" onchange="onModeChange()">
+    <option value="入庫">① 入庫処理</option>
+    <option value="出庫">② 出庫処理</option>
+    <option value="配置替え">③ 配置替え処理</option>
+    <option value="ロケーション登録">④ ロケーション登録</option>
+  </select>
+
+  <div id="status-message">システムを初期化中...</div>
+
+  <button id="toggle-mode-btn" class="btn-toggle hidden" onclick="toggleInputMode()">手入力モードに切り替え</button>
+
+  <div id="camera-section">
+    <div id="reader"></div>
+  </div>
+
+  <div id="manual-section" class="manual-box hidden">
+    <label id="label-code" for="manual-code">型式コード (空欄の場合は一時IDが自動生成されます):</label>
+    <input type="text" id="manual-code" class="input-field" placeholder="例: ABC-1234 (空欄可)">
+    
+    <label for="product-name">製品名・メモ (検索キーワード・必須):</label>
+    <input type="text" id="product-name" class="input-field" placeholder="例: オフィスチェア 青">
+    
+    <button class="btn-submit" onclick="submitManualInput()">入力内容を確定する</button>
+  </div>
+</div>
+
+<script>
+  const API_URL = "https://script.google.com/macros/s/AKfycbxykj9XOMDFVdOhHe5AD_ch5Oa0gY25wi6yDC7q4itLYk4zgNCiWQvRKUR0iB1kdyd3CA/exec";
+
+  let html5QrcodeScanner = null;
+  let currentMode = "入庫";
+  let step = 1; 
+  let isProcessing = false; 
+  let isManualMode = false;
+
+  let dataLog = { location: "", model: "", newLocation: "" };
+
+  function onModeChange() {
+    currentMode = document.getElementById("mode-select").value;
+    resetFlow();
   }
 
-  if (!e || !e.postData || !e.postData.contents) {
-    return sendResponse("error", "データが届いていません。");
+  function resetFlow() {
+    step = 1;
+    isProcessing = false;
+    isManualMode = false;
+    dataLog = { location: "", model: "", newLocation: "" };
+    
+    document.getElementById("manual-code").value = "";
+    document.getElementById("product-name").value = "";
+    document.getElementById("manual-section").classList.add("hidden");
+    document.getElementById("camera-section").classList.remove("hidden");
+    
+    updateGuideMessage();
+    updateToggleVisibility();
+    
+    if (html5QrcodeScanner) {
+      html5QrcodeScanner.clear().then(() => {
+        html5QrcodeScanner = null;
+        setTimeout(startScanner, 400);
+      }).catch(err => {
+        html5QrcodeScanner = null;
+        setTimeout(startScanner, 400);
+      });
+    } else {
+      setTimeout(startScanner, 400);
+    }
   }
 
-  try {
-    const json = JSON.parse(e.postData.contents);
-    let mode = json.mode ? json.mode.trim() : "";
-    let location = json.location ? json.location.trim() : "";
-    let rawModel = json.model ? json.model.trim() : ""; 
-    let newLocation = json.newLocation ? json.newLocation.trim() : "";
+  function updateToggleVisibility() {
+    const toggleBtn = document.getElementById("toggle-mode-btn");
+    const labelCode = document.getElementById("label-code");
+    
+    const isModelStep = 
+      (currentMode === "入庫" && step === 2) ||
+      (currentMode === "出庫" && step === 2) ||
+      (currentMode === "配置替え" && step === 2);
 
-    // --- 【手入力データ分解ロジック】 ---
-    let modelCode = rawModel;   // B列（型式コード）用
-    let tempId = "";           // C列（一時ID）用
-    let productName = "";      // F列（製品名・メモ）用
-
-    if (rawModel.startsWith("TEMP-")) {
-      const match = rawModel.match(/^(TEMP-\d{8}-\d{6})\s*\[(.*)\]$/);
-      if (match) {
-        tempId = match[1];      // TEMP-xxx部分
-        productName = match[2]; // [ ] の中の製品名・メモ部分
-        modelCode = "";         // 型式コードはないためB列は空欄
-      }
-    }
-
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const dataSheet = ss.getSheetByName("Data");
-    const shippingSheet = ss.getSheetByName("出荷");
-    const historySheet = ss.getSheetByName("配替え履歴");
-    const masterSheet = ss.getSheetByName("マスター");
-    const timestamp = new Date();
-
-    // ① 入庫処理
-    if (mode.includes("入庫")) {
-      if (!location || !rawModel) return sendResponse("error", "ロケーションまたは型式が空です。");
+    if (isModelStep) {
+      toggleBtn.classList.remove("hidden");
+      toggleBtn.innerText = isManualMode ? "カメラスキャンに戻る" : "手入力モードに切り替え";
       
-      // マスター存在チェック
-      const masterValues = masterSheet.getDataRange().getValues();
-      let isLocationValid = false;
-      for (let i = 0; i < masterValues.length; i++) {
-        if (masterValues[i][0] == location) {
-          isLocationValid = true;
-          break;
-        }
+      // 出庫・配置替えの時はガイドラベルを変更
+      if (currentMode === "入庫") {
+        labelCode.innerText = "型式コード (空欄の場合は一時IDが自動生成されます):";
+      } else {
+        labelCode.innerText = "型式コード (空欄時は下のキーワードから既存データを1点自動検索します):";
       }
-      if (!isLocationValid) {
-        return sendResponse("error", "指定されたロケーションがマスターに登録されていません。");
-      }
+    } else {
+      toggleBtn.classList.add("hidden");
+    }
+  }
 
-      // 重複チェック（通常の型式スキャン時のみ。手入力の一時ID時はスルー）
-      if (!tempId) {
-        const dataValues = dataSheet.getDataRange().getValues();
-        for (let i = 1; i < dataValues.length; i++) {
-          if (dataValues[i][1] === modelCode) { // B列:型式コード
-            return sendResponse("error", "この型式は既に登録されています。");
-          }
-        }
-      }
+  function toggleInputMode() {
+    isManualMode = !isManualMode;
+    const cameraSection = document.getElementById("camera-section");
+    const manualSection = document.getElementById("manual-section");
 
-      // Dataシートへの書き込み
-      // A列:入庫日, B列:型式コード, C列:一時ID, D列:ロケーション, E列:空(予備), F列:製品名・メモ
-      dataSheet.appendRow([timestamp, modelCode, tempId, location, "", productName]);
-      return sendResponse("success", "入庫処理が完了しました。");
+    if (isManualMode) {
+      if (html5QrcodeScanner) {
+        html5QrcodeScanner.clear().then(() => { html5QrcodeScanner = null; }).catch(() => { html5QrcodeScanner = null; });
+      }
+      cameraSection.classList.add("hidden");
+      manualSection.classList.remove("hidden");
+      document.getElementById("product-name").focus();
+    } else {
+      cameraSection.classList.remove("hidden");
+      manualSection.classList.add("hidden");
+      setTimeout(startScanner, 400);
+    }
+    updateToggleVisibility();
+  }
+
+  function generateTempId() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const date = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    return `TEMP-${year}${month}${date}-${hours}${minutes}${seconds}`;
+  }
+
+  // 手入力確定時のロジック（ここを大幅に拡張）
+  function submitManualInput() {
+    if (isProcessing) return;
+
+    let code = document.getElementById("manual-code").value.trim();
+    const memo = document.getElementById("product-name").value.trim();
+
+    if (!memo) {
+      alert("現場での識別・検索のため、製品名・メモ（キーワード）は必ず入力してください。");
+      return;
     }
 
-    // ② 出庫処理
-    else if (mode.includes("出庫")) {
-      if (!location || !rawModel) return sendResponseResponse("error", "ロケーションまたは型式が空です。");
-      const dataValues = dataSheet.getDataRange().getValues();
-      let foundIndex = -1;
-
-      for (let i = 1; i < dataValues.length; i++) {
-        const isModelMatch = (!tempId && dataValues[i][1] === modelCode);
-        const isTempIdMatch = (tempId && dataValues[i][2] === tempId);
-
-        if ((isModelMatch || isTempIdMatch) && dataValues[i][3] === location) { 
-          foundIndex = i;
-          break;
-        }
+    // ① 入庫処理の場合
+    if (currentMode === "入庫") {
+      if (!code) {
+        code = generateTempId();
       }
-
-      if (foundIndex === -1) {
-        return sendResponse("error", "該当する製品が指定のロケーションに見つかりません。");
-      }
-
-      // 出荷シートへ記録してDataシートから削除
-      shippingSheet.appendRow([timestamp, modelCode, tempId, location, "", dataValues[foundIndex][5] || productName]);
-      dataSheet.deleteRow(foundIndex + 1);
-      return sendResponse("success", "出庫処理が完了しました。");
-    }
-
-    // ③ 配置替え処理
-    else if (mode.includes("配置替え")) {
-      if (!location || !rawModel || !newLocation) return sendResponse("error", "移動元、製品、または移動先が空です。");
-      const dataValues = dataSheet.getDataRange().getValues();
-      let foundIndex = -1;
-
-      for (let i = 1; i < dataValues.length; i++) {
-        const isModelMatch = (!tempId && dataValues[i][1] === modelCode);
-        const isTempIdMatch = (tempId && dataValues[i][2] === tempId);
-
-        if ((isModelMatch || isTempIdMatch) && dataValues[i][3] === location) {
-          foundIndex = i;
-          break;
-        }
-      }
-
-      if (foundIndex === -1) {
-        return sendResponse("error", "移動対象の製品が指定の移動元ロケーションに見つかりません。");
-      }
-
-      // D列（ロケーション）を更新
-      dataSheet.getRange(foundIndex + 1, 4).setValue(newLocation);
-      
-      // 履歴シートへの書き込み
-      historySheet.appendRow([timestamp, location, modelCode || tempId, newLocation, dataValues[foundIndex][5] || productName]);
-      return sendResponse("success", "配置替え処理が完了しました。");
-    }
-
-    // ④ ロケーション登録
-    else if (mode.includes("ロケーション登録")) {
-      if (!location) return sendResponse("error", "ロケーション名が空です。");
-      
-      const masterValues = masterSheet.getDataRange().getValues();
-      for (let i = 0; i < masterValues.length; i++) {
-        if (masterValues[i][0] === location) {
-          return sendResponse("error", "このロケーションは既にマスターに登録されています。");
-        }
-      }
-      
-      masterSheet.appendRow([location]);
-      return sendResponse("success", "新規ロケーションをマスターに登録しました。");
-    }
-
+      dataLog.model = `${code}  ${memo}`; // スペース2つで結合
+      isProcessing = true;
+      showConfirmDialog(dataLog.model, true);
+    } 
+    // ② 出庫・配置替え処理の場合（自動引き当てロジック）
     else {
-      return sendResponse("error", "無効なモードが指定されました: " + mode);
+      if (code) {
+        // 型式が手入力されていれば、そのまま結合
+        dataLog.model = `${code}  ${memo}`;
+        isProcessing = true;
+        showConfirmDialog(dataLog.model, true);
+      } else {
+        // 型式が空欄の場合、GAS経由で現在のロケーションにある製品一覧を取得して検索
+        const msgEl = document.getElementById("status-message");
+        msgEl.innerText = "🔍 ロケーション内の在庫を照合中...";
+        
+        // GETリクエストで現在の在庫リストを取得
+        fetch(`${API_URL}?location=${encodeURIComponent(dataLog.location)}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.status === "success") {
+              const items = data.items; // 対象ロケーションのB列のリスト
+              
+              // メモのキーワードが含まれるものをフィルタリング
+              const matchedItems = items.filter(item => item.includes(memo));
+              
+              if (matchedItems.length === 0) {
+                alert(`⚠️ エラー: 指定されたロケーション「${dataLog.location}」に、キーワード「${memo}」が含まれる製品が見つかりません。`);
+                msgEl.innerText = "型式の入力をやり直してください";
+              } else if (matchedItems.length === 1) {
+                // 1点だけ一致した場合に自動採用
+                dataLog.model = matchedItems[0];
+                isProcessing = true;
+                showConfirmDialog(dataLog.model, true);
+              } else {
+                // 2点以上一致した場合は拒否
+                alert(`⚠️ 情報不足: 該当する製品が ${matchedItems.length} 件見つかりました。特定できません。\n\n【見つかった候補】\n${matchedItems.join('\n')}\n\nもっと具体的なキーワードを入力するか、直接型式コードを入力してください。`);
+                msgEl.innerText = "条件を絞り込んでやり直してください";
+              }
+            } else {
+              alert("在庫データの取得に失敗しました: " + data.message);
+              updateGuideMessage();
+            }
+          })
+          .catch(err => {
+            console.error(err);
+            alert("通信エラーが発生しました。");
+            updateGuideMessage();
+          });
+      }
+    }
+  }
+
+  function updateGuideMessage() {
+    const msgEl = document.getElementById("status-message");
+    if (currentMode === "入庫") {
+      msgEl.innerText = step === 1 ? "【入庫】ロケーションをスキャンしてください" : "【入庫】型式をスキャンまたは手入力してください";
+    } else if (currentMode === "出庫") {
+      msgEl.innerText = step === 1 ? "【出庫】ロケーションをスキャンしてください" : "【出庫】型式をスキャンまたは手入力してください";
+    } else if (currentMode === "配置替え") {
+      if (step === 1) msgEl.innerText = "【配置替え】移動元のロケーションをスキャン";
+      else if (step === 2) msgEl.innerText = "【配置替え】製品（型式）をスキャンまたは手入力";
+      else msgEl.innerText = "【配置替え】移動先の新ロケーションをスキャン";
+    } else if (currentMode === "ロケーション登録") {
+      msgEl.innerText = "【登録】新規登録するロケーションをスキャンしてください";
+    }
+  }
+
+  function onScanSuccess(decodedText) {
+    if (isProcessing) return; 
+    isProcessing = true; 
+
+    if (html5QrcodeScanner) {
+      html5QrcodeScanner.clear().then(() => {
+        html5QrcodeScanner = null;
+        showConfirmDialog(decodedText, false);
+      }).catch(() => {
+        html5QrcodeScanner = null;
+        showConfirmDialog(decodedText, false);
+      });
+    } else {
+      showConfirmDialog(decodedText, false);
+    }
+  }
+
+  function showConfirmDialog(decodedText, isManualFrom) {
+    let confirmMessage = "";
+    
+    if (currentMode === "入庫") {
+      if (step === 1) {
+        dataLog.location = decodedText;
+        confirmMessage = `入庫先ロケーション: ${decodedText}\n\nこの場所を選択しますか？`;
+      } else {
+        if (!isManualFrom) dataLog.model = decodedText;
+        confirmMessage = `製品/型式: ${dataLog.model}\nロケーション: ${dataLog.location}\n\nこの内容で入庫を確定しますか？`;
+      }
+    } else if (currentMode === "出庫") {
+      if (step === 1) {
+        dataLog.location = decodedText;
+        confirmMessage = `出庫元ロケーション: ${decodedText}\n\nこの場所から出庫しますか？`;
+      } else {
+        if (!isManualFrom) dataLog.model = decodedText;
+        confirmMessage = `製品/型式: ${dataLog.model}\nロケーション: ${dataLog.location}\n\nこの製品を出庫しますか？`;
+      }
+    } else if (currentMode === "配置替え") {
+      if (step === 1) {
+        dataLog.location = decodedText;
+        confirmMessage = `移動元ロケーション: ${decodedText}\n\nここから移動しますか？`;
+      } else if (step === 2) {
+        if (!isManualFrom) dataLog.model = decodedText;
+        confirmMessage = `製品/型式: ${dataLog.model}\n\nこの製品を移動しますか？`;
+      } else {
+        dataLog.newLocation = decodedText;
+        confirmMessage = `新ロケーション: ${decodedText}\n\nここに配置を換えますか？`;
+      }
+    } else if (currentMode === "ロケーション登録") {
+      dataLog.location = decodedText;
+      confirmMessage = `新規ロケーション: ${decodedText}\n\nこの場所をマスター(D列)に登録しますか？`;
     }
 
-  } catch (error) {
-    return sendResponse("error", "予期せぬエラーが発生しました: " + error.toString());
-  }
-}
+    const userConfirmed = confirm(confirmMessage);
 
-function doOptions(e) {
-  const headers = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Accept, Origin, X-Requested-With",
-    "Access-Control-Max-Age": "86400"
-  };
-  return ContentService.createTextOutput("").setHeaders(headers);
-}
+    if (userConfirmed) {
+      proceedToNext();
+    } else {
+      isProcessing = false;
+      if (isManualFrom) {
+        isProcessing = false;
+      } else {
+        updateGuideMessage();
+        setTimeout(startScanner, 400);       
+      }
+    }
+  }
+
+  function proceedToNext() {
+    if (isManualMode) {
+      isManualMode = false;
+      document.getElementById("manual-section").classList.add("hidden");
+      document.getElementById("camera-section").classList.remove("hidden");
+    }
+
+    if (currentMode === "入庫" && step === 1) {
+      step = 2;
+      isProcessing = false;
+      updateGuideMessage();
+      updateToggleVisibility();
+      setTimeout(startScanner, 400); 
+    } else if (currentMode === "出庫" && step === 1) {
+      step = 2;
+      isProcessing = false;
+      updateGuideMessage();
+      updateToggleVisibility();
+      setTimeout(startScanner, 400); 
+    } else if (currentMode === "配置替え" && (step === 1 || step === 2)) {
+      step++;
+      isProcessing = false;
+      updateGuideMessage();
+      updateToggleVisibility();
+      setTimeout(startScanner, 400); 
+    } else {
+      sendDataToBackend();
+    }
+  }
+
+  function sendDataToBackend() {
+    const msgEl = document.getElementById("status-message");
+    msgEl.innerText = "⏳ 通信中...";
+    document.getElementById("toggle-mode-btn").classList.add("hidden");
+
+    fetch(API_URL, {
+      method: "POST",
+      mode: "cors",
+      headers: { "Content-Type": "text/plain" }, 
+      body: JSON.stringify({
+        mode: currentMode,
+        location: dataLog.location,
+        model: dataLog.model,
+        newLocation: dataLog.newLocation
+      })
+    })
+    .then(res => {
+      if (!res.ok) throw new Error("Network response was not ok");
+      return res.text(); 
+    })
+    .then(textData => {
+      const resData = JSON.parse(textData); 
+      isProcessing = false;
+
+      if (resData.status === "success") {
+        msgEl.style.color = "#16a34a"; 
+        msgEl.innerText = "🎉 " + (resData.message || "完了しました！");
+        setTimeout(resetFlow, 3000);
+      } else {
+        msgEl.style.color = "#dc2626"; 
+        msgEl.innerText = "⚠️ 制限: " + resData.message;
+        setTimeout(resetFlow, 4000);
+      }
+    })
+    .catch(err => {
+      console.error(err);
+      isProcessing = false;
+      msgEl.style.color = "#dc2626";
+      msgEl.innerText = "❌ 通信エラーが発生しました。もう一度お試しください。";
+      setTimeout(resetFlow, 4000);
+    });
+  }
+
+  function startScanner() {
+    if (html5QrcodeScanner || isManualMode) return;
+    try {
+      let msgEl = document.getElementById("status-message");
+      if(msgEl.innerText === "システムを初期化中...") updateGuideMessage();
+      
+      html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250, rememberLastUsedCamera: true });
+      html5QrcodeScanner.render(onScanSuccess);
+    } catch (e) {
+      console.log("Scanner init error, retrying...", e);
+    }
+  }
+
+  window.onload = () => { resetFlow(); };
+</script>
+
+</body>
+</html>
