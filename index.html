@@ -12,6 +12,7 @@
     select { width: 100%; padding: 12px; font-size: 1rem; border-radius: 8px; border: 1px solid #cbd5e1; margin-bottom: 15px; box-sizing: border-box; background-color: #fff; cursor: pointer; font-weight: bold; }
     #reader { width: 100%; border-radius: 8px; overflow: hidden; margin-bottom: 15px; border: 1px solid #e2e8f0; min-height: 250px; background-color: #ebebeb; }
     #status-message { font-size: 1.1rem; font-weight: bold; color: #2563eb; padding: 10px; background: #eff6ff; border-radius: 6px; margin-bottom: 15px; min-height: 24px; }
+    
     .hidden { display: none; }
     .btn-toggle { background-color: #64748b; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-size: 0.95rem; cursor: pointer; font-weight: bold; margin-bottom: 15px; width: 100%; }
     .btn-toggle:hover { background-color: #475569; }
@@ -47,7 +48,7 @@
     <label id="label-code" for="manual-code">型式コード (空欄の場合は一時IDが自動生成されます):</label>
     <input type="text" id="manual-code" class="input-field" placeholder="例: ABC-1234 (空欄可)">
     
-    <label for="product-name">製品名・メモ (検索キーワード・必須):</label>
+    <label for="product-name">製品名・メモ:</label>
     <input type="text" id="product-name" class="input-field" placeholder="例: オフィスチェア 青">
     
     <button class="btn-submit" onclick="submitManualInput()">入力内容を確定する</button>
@@ -55,8 +56,8 @@
 </div>
 
 <script>
-  // ⚠️【最重要】ここにステップ1で取得した最新の「ウェブアプリのURL」を貼り付けてください
-  const API_URL = "https://script.google.com/macros/s/AKfycbzOJZzKkPHLOd8M5njhkplbSBG2YXEQ6dPLX0a-yzKk7crxJHQ8crSaqBQXODp5JNOJuw/exec";
+  // ⚠️ 再生成した最新のGASウェブアプリURLに書き換えてください
+  const API_URL = "https://script.google.com/macros/s/AKfycbxykj9XOMDFVdOhHe5AD_ch5Oa0gY25wi6yDC7q4itLYk4zgNCiWQvRKUR0iB1kdyd3CA/exec";
 
   let html5QrcodeScanner = null;
   let currentMode = "入庫";
@@ -110,12 +111,9 @@
     if (isModelStep) {
       toggleBtn.classList.remove("hidden");
       toggleBtn.innerText = isManualMode ? "カメラスキャンに戻る" : "手入力モードに切り替え";
-      
-      if (currentMode === "入庫") {
-        labelCode.innerText = "型式コード (空欄の場合は一時IDが自動生成されます):";
-      } else {
-        labelCode.innerText = "型式コード (空欄時は下のキーワードから既存データを1点自動検索します):";
-      }
+      labelCode.innerText = currentMode === "入庫" 
+        ? "型式コード (空欄の場合は一時IDが自動生成されます):" 
+        : "型式コード (スプレッドシートの登録内容と完全一致させてください):";
     } else {
       toggleBtn.classList.add("hidden");
     }
@@ -132,7 +130,7 @@
       }
       cameraSection.classList.add("hidden");
       manualSection.classList.remove("hidden");
-      document.getElementById("product-name").focus();
+      document.getElementById("manual-code").focus();
     } else {
       cameraSection.classList.remove("hidden");
       manualSection.classList.add("hidden");
@@ -158,64 +156,24 @@
     let code = document.getElementById("manual-code").value.trim();
     const memo = document.getElementById("product-name").value.trim();
 
-    if (!memo) {
-      alert("現場での識別・検索のため、製品名・メモ（キーワード）は必ず入力してください。");
+    if (currentMode === "入庫" && !code) {
+      code = generateTempId();
+    }
+
+    if (!code) {
+      alert("型式コードを入力してください。");
       return;
     }
 
-    if (currentMode === "入庫") {
-      if (!code) {
-        code = generateTempId();
-      }
-      dataLog.model = `${code}  ${memo}`; 
-      isProcessing = true;
-      showConfirmDialog(dataLog.model, true);
-    } 
-    else {
-      if (code) {
-        dataLog.model = `${code}  ${memo}`;
-        isProcessing = true;
-        showConfirmDialog(dataLog.model, true);
-      } else {
-        const msgEl = document.getElementById("status-message");
-        msgEl.innerText = "🔍 ロケーション内の在庫を照合中...";
-        
-        fetch(`${API_URL}?location=${encodeURIComponent(dataLog.location)}`)
-          .then(res => res.json())
-          .then(data => {
-            if (data.status === "success") {
-              const items = data.items; 
-              
-              const cleanKeyword = memo.toUpperCase().replace(/\s+/g, "");
-              
-              const matchedItems = items.filter(item => {
-                const cleanItem = String(item).toUpperCase().replace(/\s+/g, "");
-                return cleanItem.includes(cleanKeyword);
-              });
-              
-              if (matchedItems.length === 0) {
-                alert(`⚠️ エラー: ロケーション「${dataLog.location}」内に、キーワード「${memo}」が含まれる製品が見つかりません。`);
-                msgEl.innerText = "キーワードの入力をやり直してください";
-              } else if (matchedItems.length === 1) {
-                dataLog.model = matchedItems[0];
-                isProcessing = true;
-                showConfirmDialog(dataLog.model, true);
-              } else {
-                alert(`⚠️ 情報不足: 該当する製品が ${matchedItems.length} 件見つかりました。特定できません。\n\n【候補リスト】\n${matchedItems.join('\n')}\n\n条件を絞り込むか、型式コードを直接入力してください。`);
-                msgEl.innerText = "条件を絞り込んでやり直してください";
-              }
-            } else {
-              alert("在庫データの取得に失敗しました: " + data.message);
-              updateGuideMessage();
-            }
-          })
-          .catch(err => {
-            console.error(err);
-            alert("通信エラーが発生しました。インターネット接続やGASのデプロイ状態を確認してください。");
-            updateGuideMessage();
-          });
-      }
+    // スペース2つで結合して送信データを作成
+    if (memo) {
+      dataLog.model = `${code}  ${memo}`;
+    } else {
+      dataLog.model = code;
     }
+
+    isProcessing = true;
+    showConfirmDialog(dataLog.model, true);
   }
 
   function updateGuideMessage() {
