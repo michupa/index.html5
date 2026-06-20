@@ -111,7 +111,6 @@
       toggleBtn.classList.remove("hidden");
       toggleBtn.innerText = isManualMode ? "カメラスキャンに戻る" : "手入力モードに切り替え";
       
-      // 出庫・配置替えの時はガイドラベルを変更
       if (currentMode === "入庫") {
         labelCode.innerText = "型式コード (空欄の場合は一時IDが自動生成されます):";
       } else {
@@ -153,7 +152,6 @@
     return `TEMP-${year}${month}${date}-${hours}${minutes}${seconds}`;
   }
 
-  // 手入力確定時のロジック（ここを大幅に拡張）
   function submitManualInput() {
     if (isProcessing) return;
 
@@ -165,48 +163,51 @@
       return;
     }
 
-    // ① 入庫処理の場合
     if (currentMode === "入庫") {
       if (!code) {
         code = generateTempId();
       }
-      dataLog.model = `${code}  ${memo}`; // スペース2つで結合
+      // 入庫時はコードと製品名をスペース2つで結合
+      dataLog.model = `${code}  ${memo}`; 
       isProcessing = true;
       showConfirmDialog(dataLog.model, true);
     } 
-    // ② 出庫・配置替え処理の場合（自動引き当てロジック）
     else {
+      // 出庫・配置替え処理
       if (code) {
-        // 型式が手入力されていれば、そのまま結合
         dataLog.model = `${code}  ${memo}`;
         isProcessing = true;
         showConfirmDialog(dataLog.model, true);
       } else {
-        // 型式が空欄の場合、GAS経由で現在のロケーションにある製品一覧を取得して検索
         const msgEl = document.getElementById("status-message");
         msgEl.innerText = "🔍 ロケーション内の在庫を照合中...";
         
-        // GETリクエストで現在の在庫リストを取得
+        // GASから現在の対象ロケーションの在庫リストを取得
         fetch(`${API_URL}?location=${encodeURIComponent(dataLog.location)}`)
           .then(res => res.json())
           .then(data => {
             if (data.status === "success") {
-              const items = data.items; // 対象ロケーションのB列のリスト
+              const items = data.items; 
               
-              // メモのキーワードが含まれるものをフィルタリング
-              const matchedItems = items.filter(item => item.includes(memo));
+              // 【エラー対策】入力されたキーワードとスプレッドシートの値を両方大文字にし、スペースを除去して判定
+              const cleanKeyword = memo.toUpperCase().replace(/\s+/g, "");
+              
+              const matchedItems = items.filter(item => {
+                const cleanItem = String(item).toUpperCase().replace(/\s+/g, "");
+                return cleanItem.includes(cleanKeyword);
+              });
               
               if (matchedItems.length === 0) {
-                alert(`⚠️ エラー: 指定されたロケーション「${dataLog.location}」に、キーワード「${memo}」が含まれる製品が見つかりません。`);
-                msgEl.innerText = "型式の入力をやり直してください";
+                alert(`⚠️ エラー: ロケーション「${dataLog.location}」内に、キーワード「${memo}」が含まれる製品が見つかりません。`);
+                msgEl.innerText = "キーワードの入力をやり直してください";
               } else if (matchedItems.length === 1) {
-                // 1点だけ一致した場合に自動採用
+                // 1点に絞り込めたので自動採用
                 dataLog.model = matchedItems[0];
                 isProcessing = true;
                 showConfirmDialog(dataLog.model, true);
               } else {
-                // 2点以上一致した場合は拒否
-                alert(`⚠️ 情報不足: 該当する製品が ${matchedItems.length} 件見つかりました。特定できません。\n\n【見つかった候補】\n${matchedItems.join('\n')}\n\nもっと具体的なキーワードを入力するか、直接型式コードを入力してください。`);
+                // 複数見つかった場合は拒否
+                alert(`⚠️ 情報不足: 該当する製品が ${matchedItems.length} 件見つかりました。特定できません。\n\n【候補リスト】\n${matchedItems.join('\n')}\n\n条件を絞り込むか、型式コードを直接入力してください。`);
                 msgEl.innerText = "条件を絞り込んでやり直してください";
               }
             } else {
@@ -216,7 +217,7 @@
           })
           .catch(err => {
             console.error(err);
-            alert("通信エラーが発生しました。");
+            alert("通信エラーが発生しました。インターネット接続やGASのデプロイ状態を確認してください。");
             updateGuideMessage();
           });
       }
@@ -287,7 +288,7 @@
       }
     } else if (currentMode === "ロケーション登録") {
       dataLog.location = decodedText;
-      confirmMessage = `新規ロケーション: ${decodedText}\n\nこの場所をマスター(D列)に登録しますか？`;
+      confirmMessage = `新規ロケーション: ${decodedText}\n\nこの場所をマスターに登録しますか？`;
     }
 
     const userConfirmed = confirm(confirmMessage);
