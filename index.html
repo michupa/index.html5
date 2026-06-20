@@ -309,17 +309,17 @@
       return res.text(); 
     })
     .then(textData => {
-      const resData = JSON.parse(textData); 
       isProcessing = false;
-
-      if (resData.status === "success") {
-        msgEl.style.color = "#16a34a"; 
-        msgEl.innerText = "🎉 " + (resData.message || "完了しました！");
-        setTimeout(resetFlow, 3000);
-      } else {
+      
+      // GAS側から「エラーが発生しました」等の文言、あるいは「成功メッセージ」がプレーンテキストで直接返る仕様に準拠
+      if (textData.includes("エラー") || textData.includes("制限") || textData.includes("不一致") || textData.includes("登録されていません")) {
         msgEl.style.color = "#dc2626"; 
-        msgEl.innerText = "⚠️ 制限: " + resData.message;
+        msgEl.innerText = "⚠️ 制限: " + textData;
         setTimeout(resetFlow, 4000);
+      } else {
+        msgEl.style.color = "#16a34a"; 
+        msgEl.innerText = "🎉 " + textData;
+        setTimeout(resetFlow, 3000);
       }
     })
     .catch(err => {
