@@ -293,6 +293,7 @@
     msgEl.innerText = "⏳ 通信中...";
     document.getElementById("toggle-mode-btn").classList.add("hidden");
 
+    // GASが最も受け取りやすいプレーンテキスト形式で送信
     fetch(API_URL, {
       method: "POST",
       mode: "cors",
@@ -305,36 +306,32 @@
       })
     })
     .then(res => {
-      if (!res.ok) throw new Error("Network response was not ok");
+      // 通信自体が成功したかチェック
+      if (!res.ok) throw new Error("ネットワークエラーが発生しました");
       return res.text(); 
     })
     .then(textData => {
       isProcessing = false;
       
-      try {
-        // GASから届いたJSON形式を解読
-        const resData = JSON.parse(textData);
+      // 送られてきたデータがJSONかテキストかに関わらず、文字が含まれているかで安全に判定
+      if (textData.includes("success") || textData.includes("SUCCESS") || textData.includes("完了")) {
+        msgEl.style.color = "#16a34a"; 
         
-        if (resData.status === "success" || resData.status === "SUCCESS") {
-          msgEl.style.color = "#16a34a"; 
-          msgEl.innerText = "🎉 " + (resData.message || "完了しました！");
-          setTimeout(resetFlow, 3000);
-        } else {
-          msgEl.style.color = "#dc2626"; 
-          msgEl.innerText = "⚠️ 制限: " + (resData.message || "エラーが発生しました");
-          setTimeout(resetFlow, 4000);
-        }
-      } catch (e) {
-        // 万が一プレーンテキストで返ってきた場合の防衛策
-        if (textData.includes("エラー") || textData.includes("制限") || textData.includes("不一致") || textData.includes("登録されていません")) {
-          msgEl.style.color = "#dc2626"; 
-          msgEl.innerText = "⚠️ 制限: " + textData;
-          setTimeout(resetFlow, 4000);
-        } else {
-          msgEl.style.color = "#16a34a"; 
-          msgEl.innerText = "🎉 " + textData;
-          setTimeout(resetFlow, 3000);
-        }
+        // JSONからメッセージ部分だけを上手に抜き出す処理
+        let match = textData.match(/"message"\s*:\s*"([^"]+)"/);
+        let displayMsg = match ? match[1] : "処理が完了しました！";
+        
+        msgEl.innerText = "🎉 " + displayMsg;
+        setTimeout(resetFlow, 3000);
+      } else {
+        msgEl.style.color = "#dc2626"; 
+        
+        // エラー文言を抜き出す。なければ届いた文字をそのまま出す
+        let match = textData.match(/"message"\s*:\s*"([^"]+)"/);
+        let displayMsg = match ? match[1] : textData;
+        
+        msgEl.innerText = "⚠️ 制限: " + displayMsg;
+        setTimeout(resetFlow, 4000);
       }
     })
     .catch(err => {
