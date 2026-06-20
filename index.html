@@ -12,7 +12,6 @@
     select { width: 100%; padding: 12px; font-size: 1rem; border-radius: 8px; border: 1px solid #cbd5e1; margin-bottom: 15px; box-sizing: border-box; background-color: #fff; cursor: pointer; font-weight: bold; }
     #reader { width: 100%; border-radius: 8px; overflow: hidden; margin-bottom: 15px; border: 1px solid #e2e8f0; min-height: 250px; background-color: #ebebeb; }
     #status-message { font-size: 1.1rem; font-weight: bold; color: #2563eb; padding: 10px; background: #eff6ff; border-radius: 6px; margin-bottom: 15px; min-height: 24px; }
-    
     .hidden { display: none; }
     .btn-toggle { background-color: #64748b; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-size: 0.95rem; cursor: pointer; font-weight: bold; margin-bottom: 15px; width: 100%; }
     .btn-toggle:hover { background-color: #475569; }
@@ -56,6 +55,7 @@
 </div>
 
 <script>
+  // ⚠️【最重要】ここにステップ1で取得した最新の「ウェブアプリのURL」を貼り付けてください
   const API_URL = "https://script.google.com/macros/s/AKfycbxykj9XOMDFVdOhHe5AD_ch5Oa0gY25wi6yDC7q4itLYk4zgNCiWQvRKUR0iB1kdyd3CA/exec";
 
   let html5QrcodeScanner = null;
@@ -167,13 +167,11 @@
       if (!code) {
         code = generateTempId();
       }
-      // 入庫時はコードと製品名をスペース2つで結合
       dataLog.model = `${code}  ${memo}`; 
       isProcessing = true;
       showConfirmDialog(dataLog.model, true);
     } 
     else {
-      // 出庫・配置替え処理
       if (code) {
         dataLog.model = `${code}  ${memo}`;
         isProcessing = true;
@@ -182,14 +180,12 @@
         const msgEl = document.getElementById("status-message");
         msgEl.innerText = "🔍 ロケーション内の在庫を照合中...";
         
-        // GASから現在の対象ロケーションの在庫リストを取得
         fetch(`${API_URL}?location=${encodeURIComponent(dataLog.location)}`)
           .then(res => res.json())
           .then(data => {
             if (data.status === "success") {
               const items = data.items; 
               
-              // 【エラー対策】入力されたキーワードとスプレッドシートの値を両方大文字にし、スペースを除去して判定
               const cleanKeyword = memo.toUpperCase().replace(/\s+/g, "");
               
               const matchedItems = items.filter(item => {
@@ -201,12 +197,10 @@
                 alert(`⚠️ エラー: ロケーション「${dataLog.location}」内に、キーワード「${memo}」が含まれる製品が見つかりません。`);
                 msgEl.innerText = "キーワードの入力をやり直してください";
               } else if (matchedItems.length === 1) {
-                // 1点に絞り込めたので自動採用
                 dataLog.model = matchedItems[0];
                 isProcessing = true;
                 showConfirmDialog(dataLog.model, true);
               } else {
-                // 複数見つかった場合は拒否
                 alert(`⚠️ 情報不足: 該当する製品が ${matchedItems.length} 件見つかりました。特定できません。\n\n【候補リスト】\n${matchedItems.join('\n')}\n\n条件を絞り込むか、型式コードを直接入力してください。`);
                 msgEl.innerText = "条件を絞り込んでやり直してください";
               }
