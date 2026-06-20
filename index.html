@@ -12,6 +12,17 @@
     select { width: 100%; padding: 12px; font-size: 1rem; border-radius: 8px; border: 1px solid #cbd5e1; margin-bottom: 15px; box-sizing: border-box; background-color: #fff; cursor: pointer; font-weight: bold; }
     #reader { width: 100%; border-radius: 8px; overflow: hidden; margin-bottom: 15px; border: 1px solid #e2e8f0; min-height: 250px; background-color: #ebebeb; }
     #status-message { font-size: 1.1rem; font-weight: bold; color: #2563eb; padding: 10px; background: #eff6ff; border-radius: 6px; margin-bottom: 15px; min-height: 24px; }
+    
+    /* 追加：手入力用のUIスタイリング */
+    .hidden { display: none; }
+    .btn-toggle { background-color: #64748b; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-size: 0.95rem; cursor: pointer; font-weight: bold; margin-bottom: 15px; width: 100%; }
+    .btn-toggle:hover { background-color: #475569; }
+    .manual-box { background: #f8fafc; border: 1px solid #e2e8f0; padding: 15px; border-radius: 8px; margin-bottom: 15px; text-align: left; }
+    .manual-box label { font-size: 0.9rem; font-weight: bold; color: #475569; display: block; margin-top: 10px; }
+    .manual-box label:first-child { margin-top: 0; }
+    .input-field { width: 100%; padding: 10px; margin-top: 5px; border-radius: 6px; border: 1px solid #cbd5e1; box-sizing: border-box; font-size: 1rem; }
+    .btn-submit { background-color: #10b981; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 1rem; cursor: pointer; font-weight: bold; width: 100%; margin-top: 15px; }
+    .btn-submit:hover { background-color: #059669; }
   </style>
 </head>
 <body>
@@ -27,7 +38,22 @@
   </select>
 
   <div id="status-message">システムを初期化中...</div>
-  <div id="reader"></div>
+
+  <button id="toggle-mode-btn" class="btn-toggle hidden" onclick="toggleInputMode()">手入力モードに切り替え</button>
+
+  <div id="camera-section">
+    <div id="reader"></div>
+  </div>
+
+  <div id="manual-section" class="manual-box hidden">
+    <label for="manual-code">型式コード (空欄の場合は一時IDが自動生成されます):</label>
+    <input type="text" id="manual-code" class="input-field" placeholder="例: ABC-1234 (空欄可)">
+    
+    <label for="product-name">製品名・メモ (必須):</label>
+    <input type="text" id="product-name" class="input-field" placeholder="例: オフィスチェア 青">
+    
+    <button class="btn-submit" onclick="submitManualInput()">入力内容を確定する</button>
+  </div>
 </div>
 
 <script>
@@ -37,6 +63,7 @@
   let currentMode = "入庫";
   let step = 1; 
   let isProcessing = false; 
+  let isManualMode = false; // 追加：手入力モードの状態管理
 
   let dataLog = { location: "", model: "", newLocation: "" };
 
@@ -48,8 +75,17 @@
   function resetFlow() {
     step = 1;
     isProcessing = false;
+    isManualMode = false; // 手入力モードをリセット
     dataLog = { location: "", model: "", newLocation: "" };
+    
+    // フォームと表示のリセット
+    document.getElementById("manual-code").value = "";
+    document.getElementById("product-name").value = "";
+    document.getElementById("manual-section").classList.add("hidden");
+    document.getElementById("camera-section").classList.remove("hidden");
+    
     updateGuideMessage();
+    updateToggleVisibility(); // トグルボタンの表示制御
     
     if (html5QrcodeScanner) {
       html5QrcodeScanner.clear().then(() => {
@@ -65,15 +101,95 @@
     }
   }
 
+  // 追加：製品（型式）スキャンステップの時だけ「手入力切り替えボタン」を表示する
+  function updateToggleVisibility() {
+    const toggleBtn = document.getElementById("toggle-mode-btn");
+    
+    // 型式（製品）をスキャンするステップの時のみ表示
+    const isModelStep = 
+      (currentMode === "入庫" && step === 2) ||
+      (currentMode === "出庫" && step === 2) ||
+      (currentMode === "配置替え" && step === 2);
+
+    if (isModelStep) {
+      toggleBtn.classList.remove("hidden");
+      toggleBtn.innerText = isManualMode ? "カメラスキャンに戻る" : "手入力モードに切り替え";
+    } else {
+      toggleBtn.classList.add("hidden");
+    }
+  }
+
+  // 追加：切り替えトグル処理
+  function toggleInputMode() {
+    isManualMode = !isManualMode;
+    const cameraSection = document.getElementById("camera-section");
+    const manualSection = document.getElementById("manual-section");
+
+    if (isManualMode) {
+      // 手入力モードへ
+      if (html5QrcodeScanner) {
+        html5QrcodeScanner.clear().then(() => { html5QrcodeScanner = null; }).catch(() => { html5QrcodeScanner = null; });
+      }
+      cameraSection.classList.add("hidden");
+      manualSection.classList.remove("hidden");
+      document.getElementById("product-name").focus(); // 製品名にフォーカス
+    } else {
+      // カメラモードへ戻る
+      cameraSection.classList.remove("hidden");
+      manualSection.classList.add("hidden");
+      setTimeout(startScanner, 400);
+    }
+    updateToggleVisibility();
+  }
+
+  // 追加：使い捨て一時ID（ユニークコード）自動生成ロジック
+  function generateTempId() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const date = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    
+    // 形式: TEMP-20260619-173045
+    return `TEMP-${year}${month}${date}-${hours}${minutes}${seconds}`;
+  }
+
+  // 追加：手入力フォームの確定処理
+  function submitManualInput() {
+    if (isProcessing) return;
+
+    let code = document.getElementById("manual-code").value.trim();
+    const memo = document.getElementById("product-name").value.trim();
+
+    if (!memo) {
+      alert("現場での識別のため、製品名・メモは必ず入力してください。");
+      return;
+    }
+
+    // 型式コードが空の場合は使い捨て一時IDを自動生成
+    if (!code) {
+      code = generateTempId();
+    }
+
+    // 手入力の製品名（メモ）を型式コードの後ろに結合して格納
+    // GAS側でF列に転記、または分解しやすいよう「型式 [メモ]」の構成にします
+    dataLog.model = `${code} [${memo}]`;
+
+    isProcessing = true;
+    showConfirmDialog(dataLog.model, true); // 手入力からの遷移フラグを渡す
+  }
+
   function updateGuideMessage() {
     const msgEl = document.getElementById("status-message");
     if (currentMode === "入庫") {
-      msgEl.innerText = step === 1 ? "【入庫】ロケーションをスキャンしてください" : "【入庫】型式をスキャンしてください";
+      msgEl.innerText = step === 1 ? "【入庫】ロケーションをスキャンしてください" : "【入庫】型式をスキャンまたは手入力してください";
     } else if (currentMode === "出庫") {
-      msgEl.innerText = step === 1 ? "【出庫】ロケーションをスキャンしてください" : "【出庫】型式をスキャンしてください";
+      msgEl.innerText = step === 1 ? "【出庫】ロケーションをスキャンしてください" : "【出庫】型式をスキャンまたは手入力してください";
     } else if (currentMode === "配置替え") {
       if (step === 1) msgEl.innerText = "【配置替え】移動元のロケーションをスキャン";
-      else if (step === 2) msgEl.innerText = "【配置替え】製品（型式）をスキャン";
+      else if (step === 2) msgEl.innerText = "【配置替え】製品（型式）をスキャンまたは手入力";
       else msgEl.innerText = "【配置替え】移動先の新ロケーションをスキャン";
     } else if (currentMode === "ロケーション登録") {
       msgEl.innerText = "【登録】新規登録するロケーションをスキャンしてください";
@@ -87,17 +203,18 @@
     if (html5QrcodeScanner) {
       html5QrcodeScanner.clear().then(() => {
         html5QrcodeScanner = null;
-        showConfirmDialog(decodedText);
+        showConfirmDialog(decodedText, false);
       }).catch(() => {
         html5QrcodeScanner = null;
-        showConfirmDialog(decodedText);
+        showConfirmDialog(decodedText, false);
       });
     } else {
-      showConfirmDialog(decodedText);
+      showConfirmDialog(decodedText, false);
     }
   }
 
-  function showConfirmDialog(decodedText) {
+  // 引数に isManualFrom を追加して確認ダイアログの挙動を調整
+  function showConfirmDialog(decodedText, isManualFrom) {
     let confirmMessage = "";
     
     if (currentMode === "入庫") {
@@ -105,24 +222,24 @@
         dataLog.location = decodedText;
         confirmMessage = `入庫先ロケーション: ${decodedText}\n\nこの場所を選択しますか？`;
       } else {
-        dataLog.model = decodedText;
-        confirmMessage = `型式: ${decodedText}\nロケーション: ${dataLog.location}\n\nこの内容で入庫を確定しますか？`;
+        if (!isManualFrom) dataLog.model = decodedText;
+        confirmMessage = `製品/型式: ${dataLog.model}\nロケーション: ${dataLog.location}\n\nこの内容で入庫を確定しますか？`;
       }
     } else if (currentMode === "出庫") {
       if (step === 1) {
         dataLog.location = decodedText;
         confirmMessage = `出庫元ロケーション: ${decodedText}\n\nこの場所から出庫しますか？`;
       } else {
-        dataLog.model = decodedText;
-        confirmMessage = `型式: ${decodedText}\nロケーション: ${dataLog.location}\n\nこの製品を出庫しますか？`;
+        if (!isManualFrom) dataLog.model = decodedText;
+        confirmMessage = `製品/型式: ${dataLog.model}\nロケーション: ${dataLog.location}\n\nこの製品を出庫しますか？`;
       }
     } else if (currentMode === "配置替え") {
       if (step === 1) {
         dataLog.location = decodedText;
         confirmMessage = `移動元ロケーション: ${decodedText}\n\nここから移動しますか？`;
       } else if (step === 2) {
-        dataLog.model = decodedText;
-        confirmMessage = `型式: ${decodedText}\n\nこの製品を移動しますか？`;
+        if (!isManualFrom) dataLog.model = decodedText;
+        confirmMessage = `製品/型式: ${dataLog.model}\n\nこの製品を移動しますか？`;
       } else {
         dataLog.newLocation = decodedText;
         confirmMessage = `新ロケーション: ${decodedText}\n\nここに配置を換えますか？`;
@@ -138,26 +255,41 @@
       proceedToNext();
     } else {
       isProcessing = false;
-      updateGuideMessage();
-      setTimeout(startScanner, 400);       
+      // キャンセル時は手入力状態を維持するかカメラに戻すか判定
+      if (isManualFrom) {
+        isProcessing = false;
+      } else {
+        updateGuideMessage();
+        setTimeout(startScanner, 400);       
+      }
     }
   }
 
   function proceedToNext() {
+    // 次に進む前に手入力モードだったらフラグを解除してフォームを閉じる
+    if (isManualMode) {
+      isManualMode = false;
+      document.getElementById("manual-section").classList.add("hidden");
+      document.getElementById("camera-section").classList.remove("hidden");
+    }
+
     if (currentMode === "入庫" && step === 1) {
       step = 2;
       isProcessing = false;
       updateGuideMessage();
+      updateToggleVisibility();
       setTimeout(startScanner, 400); 
     } else if (currentMode === "出庫" && step === 1) {
       step = 2;
       isProcessing = false;
       updateGuideMessage();
+      updateToggleVisibility();
       setTimeout(startScanner, 400); 
     } else if (currentMode === "配置替え" && (step === 1 || step === 2)) {
       step++;
       isProcessing = false;
       updateGuideMessage();
+      updateToggleVisibility();
       setTimeout(startScanner, 400); 
     } else {
       sendDataToBackend();
@@ -167,6 +299,7 @@
   function sendDataToBackend() {
     const msgEl = document.getElementById("status-message");
     msgEl.innerText = "⏳ 通信中...";
+    document.getElementById("toggle-mode-btn").classList.add("hidden"); // 通信時はボタン非表示
 
     fetch(API_URL, {
       method: "POST",
@@ -175,7 +308,7 @@
       body: JSON.stringify({
         mode: currentMode,
         location: dataLog.location,
-        model: dataLog.model,
+        model: dataLog.model, // 手入力時は "TEMP-xxx [製品名・メモ]" が送信されます
         newLocation: dataLog.newLocation
       })
     })
@@ -207,9 +340,9 @@
   }
 
   function startScanner() {
-    if (html5QrcodeScanner) return;
+    if (html5QrcodeScanner || isManualMode) return; // 手入力モード中なら起動しない
     try {
-      msgEl = document.getElementById("status-message");
+      let msgEl = document.getElementById("status-message");
       if(msgEl.innerText === "システムを初期化中...") updateGuideMessage();
       
       html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250, rememberLastUsedCamera: true });
