@@ -111,9 +111,7 @@
     if (isModelStep) {
       toggleBtn.classList.remove("hidden");
       toggleBtn.innerText = isManualMode ? "カメラスキャンに戻る" : "手入力モードに切り替え";
-      labelCode.innerText = currentMode === "入庫" 
-        ? "型式コード (空欄の場合は一時IDが自動生成されます):" 
-        : "型式コード (スプレッドシートの登録内容と完全一致させてください):";
+      labelCode.innerText = "型式コード (空欄の場合は一時IDが自動生成されます):";
     } else {
       toggleBtn.classList.add("hidden");
     }
@@ -156,7 +154,8 @@
     let code = document.getElementById("manual-code").value.trim();
     const memo = document.getElementById("product-name").value.trim();
 
-    if (currentMode === "入庫" && !code) {
+    // 入庫・出庫・配置替えすべてで空欄時の自動一時ID生成を適用
+    if ((currentMode === "入庫" || currentMode === "出庫" || currentMode === "配置替え") && !code) {
       code = generateTempId();
     }
 
@@ -165,7 +164,6 @@
       return;
     }
 
-    // スペース2つで結合して送信データを作成
     if (memo) {
       dataLog.model = `${code}  ${memo}`;
     } else {
@@ -293,7 +291,6 @@
     msgEl.innerText = "⏳ 通信中...";
     document.getElementById("toggle-mode-btn").classList.add("hidden");
 
-    // GASが最も受け取りやすいプレーンテキスト形式で送信
     fetch(API_URL, {
       method: "POST",
       mode: "cors",
@@ -306,32 +303,36 @@
       })
     })
     .then(res => {
-      // 通信自体が成功したかチェック
       if (!res.ok) throw new Error("ネットワークエラーが発生しました");
       return res.text(); 
     })
     .then(textData => {
       isProcessing = false;
       
-      // 送られてきたデータがJSONかテキストかに関わらず、文字が含まれているかで安全に判定
-      if (textData.includes("success") || textData.includes("SUCCESS") || textData.includes("完了")) {
-        msgEl.style.color = "#16a34a"; 
+      try {
+        // GASから返ってきた JSONString を安全にオブジェクト化
+        const json = JSON.parse(textData);
         
-        // JSONからメッセージ部分だけを上手に抜き出す処理
-        let match = textData.match(/"message"\s*:\s*"([^"]+)"/);
-        let displayMsg = match ? match[1] : "処理が完了しました！";
-        
-        msgEl.innerText = "🎉 " + displayMsg;
-        setTimeout(resetFlow, 3000);
-      } else {
-        msgEl.style.color = "#dc2626"; 
-        
-        // エラー文言を抜き出す。なければ届いた文字をそのまま出す
-        let match = textData.match(/"message"\s*:\s*"([^"]+)"/);
-        let displayMsg = match ? match[1] : textData;
-        
-        msgEl.innerText = "⚠️ 制限: " + displayMsg;
-        setTimeout(resetFlow, 4000);
+        if (json.status === "success" || json.status === "SUCCESS") {
+          msgEl.style.color = "#16a34a"; 
+          msgEl.innerText = "🎉 " + (json.message || "処理が完了しました！");
+          setTimeout(resetFlow, 3000);
+        } else {
+          msgEl.style.color = "#dc2626"; 
+          msgEl.innerText = "⚠️ 制限: " + (json.message || "処理を制限しました");
+          setTimeout(resetFlow, 4000);
+        }
+      } catch (e) {
+        // 万が一、JSON以外のテキストが返ってきた場合のフォールバック
+        if (textData.includes("success") || textData.includes("SUCCESS") || textData.includes("完了")) {
+          msgEl.style.color = "#16a34a";
+          msgEl.innerText = "🎉 処理が完了しました！";
+          setTimeout(resetFlow, 3000);
+        } else {
+          msgEl.style.color = "#dc2626";
+          msgEl.innerText = "⚠️ 制限: " + textData;
+          setTimeout(resetFlow, 4000);
+        }
       }
     })
     .catch(err => {
