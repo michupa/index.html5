@@ -336,7 +336,44 @@ function sendDataToBackend() {
       resetFlow();
     });
   }
+// 📸 カメラを起動するためのコア処理（この関数が抜けていたため映りませんでした）
+  function startScanner() {
+    // すでにスキャナーが存在する場合は一度クリアする
+    if (html5QrcodeScanner) {
+      html5QrcodeScanner.clear().then(() => {
+        html5QrcodeScanner = null;
+        initHtml5Qrcode();
+      }).catch(() => {
+        initHtml5Qrcode();
+      });
+    } else {
+      initHtml5Qrcode();
+    }
+  }
 
+  // ライブラリを読み込んでカメラを描画する内部処理
+  function initHtml5Qrcode() {
+    updateGuideMessage();
+    updateToggleVisibility();
+
+    // 画面上の <div id="reader"></div> に対してカメラを紐付け
+    html5QrcodeScanner = new Html5QrcodeScanner(
+      "reader", 
+      { 
+        fps: 10, 
+        qrbox: { width: 250, height: 250 },
+        rememberLastUsedCamera: true
+      },
+      /* verbose= */ false
+    );
+    
+    // スキャン成功時の関数（onScanSuccess）を渡して起動
+    html5QrcodeScanner.render(onScanSuccess, (errorMessage) => {
+      // スキャン中の細かいエラー（認識失敗など）はログに流すだけで画面には出さない
+      console.warn(errorMessage);
+    });
+  }
+  
   window.onload = () => { resetFlow(); };
 </script>
 
