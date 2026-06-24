@@ -291,56 +291,39 @@
     msgEl.innerText = "⏳ 通信中...";
     document.getElementById("toggle-mode-btn").classList.add("hidden");
 
-    fetch(API_URL, {
-      method: "POST",
-      mode: "cors",
-      headers: { "Content-Type": "text/plain" }, 
-      body: JSON.stringify({
-        mode: currentMode,
-        location: dataLog.location,
-        model: dataLog.model,
-        newLocation: dataLog.newLocation
-      })
-    })
-    .then(res => {
-      if (!res.ok) throw new Error("ネットワークエラーが発生しました");
-      return res.text(); 
-    })
-    .then(textData => {
-      isProcessing = false;
-      
-      // 文字列全体のスペースを整え、小文字に統一
-      let cleanText = textData.trim();
-      
-      // パースの成否に関わらず、GASから返ってきた生データの中に「"success"」または「success」があれば100%成功とみなす
-      if (cleanText.toLowerCase().includes("success") || cleanText.includes("完了")) {
-        msgEl.style.color = "#16a34a"; 
-        
-        // JSON文字列からmessageの中身（日本語部分）だけを安全に抜き出す正規表現
-        let match = cleanText.match(/"message"\s*:\s*"([^"]+)"/);
-        let displayMsg = match ? match[1] : "処理が完了しました！";
-        
-        msgEl.innerText = "🎉 " + displayMsg;
-        setTimeout(resetFlow, 3000);
-      } else {
-        // successが含まれていない場合はエラー（制限）扱い
-        msgEl.style.color = "#dc2626"; 
-        
-        let match = cleanText.match(/"message"\s*:\s*"([^"]+)"/);
-        let displayMsg = match ? match[1] : cleanText;
-        
-        msgEl.innerText = "⚠️ 制限: " + displayMsg;
-        setTimeout(resetFlow, 4000);
-      }
-    })
-    .catch(err => {
-      console.error(err);
-      isProcessing = false;
-      msgEl.style.color = "#dc2626";
-      msgEl.innerText = "❌ 通信エラーが発生しました。もう一度お試しください。";
-      setTimeout(resetFlow, 4000);
-    });
+    fetch("GASのウェブアプリURL", { // ⚠️お使いのGASのウェブアプリURLに書き換えてください
+  method: "POST",
+  headers: {
+    "Content-Type": "text/plain"
+  },
+  body: JSON.stringify({
+    mode: mode,          // 既存の変数名（入庫・出庫など）に合わせて調整してください
+    location: location,  // 既存の変数名に合わせて調整してください
+    model: rawModel      // 既存の変数名に合わせて調整してください
+  })
+})
+.then(res => {
+  if (!res.ok) {
+    throw new Error("ネットワークエラーが発生しました");
   }
+  return res.json(); // GAS側が綺麗にJSONを返すため、json()でパースします
+})
+.then(data => {
+  // 実行ログの代わりに、スマホ画面でGASからの戻り値を確実にチェック
+  console.log("GASレスポンス:", data); 
+
+  if (data.status === "success") {
+    alert("【成功】" + data.message);
+    // 枠線の色を緑にするなど、既存の成功時メッセージ処理があればここに記述
+  } else {
+    alert("【エラー】" + data.message);
+    // 既存のエラー表示（制限表示など）の処理があればここに記述
+  }
+})
+.catch(error => {
+  // 通信自体が失敗した場合や、CORSでブロックされた場合はここに入ります
+  alert("通信エラー、またはCORS制限: " + error.message);
+});
 
   function startScanner() {
     if (html5QrcodeScanner || isManualMode) return;
