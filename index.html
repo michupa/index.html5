@@ -286,17 +286,12 @@
     }
   }
 
-  function sendDataToBackend() {
-    const msgEl = document.getElementById("status-message");
-    msgEl.innerText = "⏳ 通信中...";
-    document.getElementById("toggle-mode-btn").classList.add("hidden");
-
 function sendDataToBackend() {
     const msgEl = document.getElementById("status-message");
     msgEl.innerText = "⏳ 通信中...";
     document.getElementById("toggle-mode-btn").classList.add("hidden");
 
-    // 💡 変数の存在チェック（フリーズ安全策）
+    // 💡 システム既存の変数（currentMode, dataLog）から安全に値を抽出
     const sendMode = currentMode || "";
     const sendLocation = dataLog.location || "";
     const sendModel = dataLog.model || "";
@@ -304,7 +299,7 @@ function sendDataToBackend() {
 
     alert("GASへデータを送信します...\nモード: " + sendMode + "\nロケ: " + sendLocation + "\n型式: " + sendModel);
 
-    // 引数として定義されている API_URL をそのまま使用します
+    // 定義されている API_URL をそのまま使用
     fetch(API_URL, { 
       method: "POST",
       headers: {
@@ -329,7 +324,7 @@ function sendDataToBackend() {
       
       if (data.status === "success") {
         alert("【成功】" + data.message);
-        resetFlow(); // 成功したら画面を初期状態に戻す
+        resetFlow(); // 成功したら初期状態に戻す
       } else {
         alert("【GASエラー】" + data.message);
         resetFlow();
