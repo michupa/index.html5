@@ -309,34 +309,28 @@
     .then(textData => {
       isProcessing = false;
       
-      // 文字列のトリムとクォーテーションのクリーニング
+      // 文字列全体のスペースを整え、小文字に統一
       let cleanText = textData.trim();
       
-      try {
-        // GASから返ってきたデータをJSONとしてパース
-        const json = JSON.parse(cleanText);
+      // パースの成否に関わらず、GASから返ってきた生データの中に「"success"」または「success」があれば100%成功とみなす
+      if (cleanText.toLowerCase().includes("success") || cleanText.includes("完了")) {
+        msgEl.style.color = "#16a34a"; 
         
-        // 判定条件を最適化：statusが明示的に "success" または "SUCCESS" なら無条件で成功
-        if (json.status && (json.status.toLowerCase() === "success")) {
-          msgEl.style.color = "#16a34a"; 
-          msgEl.innerText = "🎉 " + (json.message || "処理が完了しました！");
-          setTimeout(resetFlow, 3000);
-        } else {
-          msgEl.style.color = "#dc2626"; 
-          msgEl.innerText = "⚠️ 制限: " + (json.message || "処理が制限されました");
-          setTimeout(resetFlow, 4000);
-        }
-      } catch (e) {
-        // JSONパースに失敗した場合のセーフティネット（文字列チェック）
-        if (cleanText.toLowerCase().includes("success") || cleanText.includes("完了")) {
-          msgEl.style.color = "#16a34a";
-          msgEl.innerText = "🎉 処理が完了しました！";
-          setTimeout(resetFlow, 3000);
-        } else {
-          msgEl.style.color = "#dc2626";
-          msgEl.innerText = "⚠️ 制限: " + cleanText;
-          setTimeout(resetFlow, 4000);
-        }
+        // JSON文字列からmessageの中身（日本語部分）だけを安全に抜き出す正規表現
+        let match = cleanText.match(/"message"\s*:\s*"([^"]+)"/);
+        let displayMsg = match ? match[1] : "処理が完了しました！";
+        
+        msgEl.innerText = "🎉 " + displayMsg;
+        setTimeout(resetFlow, 3000);
+      } else {
+        // successが含まれていない場合はエラー（制限）扱い
+        msgEl.style.color = "#dc2626"; 
+        
+        let match = cleanText.match(/"message"\s*:\s*"([^"]+)"/);
+        let displayMsg = match ? match[1] : cleanText;
+        
+        msgEl.innerText = "⚠️ 制限: " + displayMsg;
+        setTimeout(resetFlow, 4000);
       }
     })
     .catch(err => {
