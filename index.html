@@ -291,52 +291,43 @@
     msgEl.innerText = "⏳ 通信中...";
     document.getElementById("toggle-mode-btn").classList.add("hidden");
 
-    fetch("GASのウェブアプリURL", { // ⚠️お使いのGASのウェブアプリURLに書き換えてください
+    // 【フリーズ対策・デバッグ版送信処理】
+alert("GASへデータを送信します..."); // 動き出したらここがポップアップします
+
+fetch("https://script.google.com/macros/s/AKfycbz_XXXXXXXXX/exec", { // ⚠️デプロイした新しいウェブアプリURLに差し替えてください
   method: "POST",
   headers: {
     "Content-Type": "text/plain"
   },
   body: JSON.stringify({
-    mode: mode,          // 既存の変数名（入庫・出庫など）に合わせて調整してください
-    location: location,  // 既存の変数名に合わせて調整してください
-    model: rawModel      // 既存の変数名に合わせて調整してください
+    mode: mode,          // ※既存の変数名（入庫・出庫など）
+    location: location,  // ※既存の変数名
+    model: rawModel      // ※既存の変数名（html5-qrcodeの読み取り値）
   })
 })
 .then(res => {
+  alert("GASからレスポンスを受信しました。ステータス: " + res.status);
   if (!res.ok) {
-    throw new Error("ネットワークエラーが発生しました");
+    throw new Error("ネットワークエラー: " + res.status);
   }
-  return res.json(); // GAS側が綺麗にJSONを返すため、json()でパースします
+  return res.json(); // 新しいGAS（MimeType.JSON）に対応
 })
 .then(data => {
-  // 実行ログの代わりに、スマホ画面でGASからの戻り値を確実にチェック
-  console.log("GASレスポンス:", data); 
-
+  alert("受信データ内容: " + JSON.stringify(data));
+  
   if (data.status === "success") {
     alert("【成功】" + data.message);
-    // 枠線の色を緑にするなど、既存の成功時メッセージ処理があればここに記述
+    // 既存の成功時処理（画面クリアや色変更など）があればここに記述
   } else {
-    alert("【エラー】" + data.message);
-    // 既存のエラー表示（制限表示など）の処理があればここに記述
+    alert("【GASエラー】" + data.message);
+    // 既存のエラー表示処理があればここに記述
   }
 })
 .catch(error => {
-  // 通信自体が失敗した場合や、CORSでブロックされた場合はここに入ります
-  alert("通信エラー、またはCORS制限: " + error.message);
-});
-
-  function startScanner() {
-    if (html5QrcodeScanner || isManualMode) return;
-    try {
-      let msgEl = document.getElementById("status-message");
-      if(msgEl.innerText === "システムを初期化中...") updateGuideMessage();
-      
-      html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250, rememberLastUsedCamera: true });
-      html5QrcodeScanner.render(onScanSuccess);
-    } catch (e) {
-      console.log("Scanner init error, retrying...", e);
-    }
-  }
+  // フリーズの真犯人がCORSブロックや接続拒否の場合、必ずここが動きます
+  alert("【通信失敗 / CORSブロック】原因: " + error.message);
+  console.error("詳細エラー:", error);
+});}
 
   window.onload = () => { resetFlow(); };
 </script>
