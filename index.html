@@ -56,7 +56,7 @@
 </div>
 
 <script>
-  // ⚠️ 新しいデプロイを行った場合は、最新のGASウェブアプリURLに書き換えてください
+  // ⚠️ 最新のGASウェブアプリURLをここに貼り付けてください
   const API_URL = "https://script.google.com/macros/s/AKfycbxykj9XOMDFVdOhHe5AD_ch5Oa0gY25wi6yDC7q4itLYk4zgNCiWQvRKUR0iB1kdyd3CA/exec";
 
   let html5QrcodeScanner = null;
@@ -154,7 +154,7 @@
     let code = document.getElementById("manual-code").value.trim();
     const memo = document.getElementById("product-name").value.trim();
 
-    // 入庫・出庫・配置替えすべてで空欄時の自動一時ID生成を適用
+    // 全てのモードで型式が空欄なら一時IDを自動生成
     if ((currentMode === "入庫" || currentMode === "出庫" || currentMode === "配置替え") && !code) {
       code = generateTempId();
     }
@@ -291,7 +291,6 @@
     msgEl.innerText = "⏳ 通信中...";
     document.getElementById("toggle-mode-btn").classList.add("hidden");
 
-    // GAS側が100%パースできるように、標準的なtext/plain形式でJSON文字列を送信
     fetch(API_URL, {
       method: "POST",
       mode: "cors",
@@ -310,29 +309,32 @@
     .then(textData => {
       isProcessing = false;
       
+      // 文字列のトリムとクォーテーションのクリーニング
+      let cleanText = textData.trim();
+      
       try {
-        // GASから返ってきた JSONString を安全に解読
-        const json = JSON.parse(textData);
+        // GASから返ってきたデータをJSONとしてパース
+        const json = JSON.parse(cleanText);
         
-        // statusの文字を大文字小文字問わずにチェック
-        if (json.status && json.status.toLowerCase() === "success") {
+        // 判定条件を最適化：statusが明示的に "success" または "SUCCESS" なら無条件で成功
+        if (json.status && (json.status.toLowerCase() === "success")) {
           msgEl.style.color = "#16a34a"; 
           msgEl.innerText = "🎉 " + (json.message || "処理が完了しました！");
           setTimeout(resetFlow, 3000);
         } else {
           msgEl.style.color = "#dc2626"; 
-          msgEl.innerText = "⚠️ 制限: " + (json.message || "エラーが発生しました");
+          msgEl.innerText = "⚠️ 制限: " + (json.message || "処理が制限されました");
           setTimeout(resetFlow, 4000);
         }
       } catch (e) {
-        // 万が一、GAS側から生テキスト（成功/エラー文言）が返ってきた場合のセーフティネット
-        if (textData.includes("success") || textData.includes("SUCCESS") || textData.includes("完了")) {
+        // JSONパースに失敗した場合のセーフティネット（文字列チェック）
+        if (cleanText.toLowerCase().includes("success") || cleanText.includes("完了")) {
           msgEl.style.color = "#16a34a";
           msgEl.innerText = "🎉 処理が完了しました！";
           setTimeout(resetFlow, 3000);
         } else {
           msgEl.style.color = "#dc2626";
-          msgEl.innerText = "⚠️ 制限: " + textData;
+          msgEl.innerText = "⚠️ 制限: " + cleanText;
           setTimeout(resetFlow, 4000);
         }
       }
