@@ -291,43 +291,56 @@
     msgEl.innerText = "⏳ 通信中...";
     document.getElementById("toggle-mode-btn").classList.add("hidden");
 
-    // 【フリーズ対策・デバッグ版送信処理】
-alert("GASへデータを送信します..."); // 動き出したらここがポップアップします
+function sendDataToBackend() {
+    const msgEl = document.getElementById("status-message");
+    msgEl.innerText = "⏳ 通信中...";
+    document.getElementById("toggle-mode-btn").classList.add("hidden");
 
-fetch("https://script.google.com/macros/s/AKfycbz_XXXXXXXXX/exec", { // ⚠️デプロイした新しいウェブアプリURLに差し替えてください
-  method: "POST",
-  headers: {
-    "Content-Type": "text/plain"
-  },
-  body: JSON.stringify({
-    mode: mode,          // ※既存の変数名（入庫・出庫など）
-    location: location,  // ※既存の変数名
-    model: rawModel      // ※既存の変数名（html5-qrcodeの読み取り値）
-  })
-})
-.then(res => {
-  alert("GASからレスポンスを受信しました。ステータス: " + res.status);
-  if (!res.ok) {
-    throw new Error("ネットワークエラー: " + res.status);
+    // 💡 変数の存在チェック（フリーズ安全策）
+    const sendMode = currentMode || "";
+    const sendLocation = dataLog.location || "";
+    const sendModel = dataLog.model || "";
+    const sendNewLocation = dataLog.newLocation || "";
+
+    alert("GASへデータを送信します...\nモード: " + sendMode + "\nロケ: " + sendLocation + "\n型式: " + sendModel);
+
+    // 引数として定義されている API_URL をそのまま使用します
+    fetch(API_URL, { 
+      method: "POST",
+      headers: {
+        "Content-Type": "text/plain"
+      },
+      body: JSON.stringify({
+        mode: sendMode,
+        location: sendLocation,
+        model: sendModel,
+        newLocation: sendNewLocation
+      })
+    })
+    .then(res => {
+      alert("GASからレスポンスを受信しました。ステータス: " + res.status);
+      if (!res.ok) {
+        throw new Error("ネットワークエラー: " + res.status);
+      }
+      return res.json(); // 新しいGAS（MimeType.JSON）に対応
+    })
+    .then(data => {
+      alert("受信データ内容: " + JSON.stringify(data));
+      
+      if (data.status === "success") {
+        alert("【成功】" + data.message);
+        resetFlow(); // 成功したら画面を初期状態に戻す
+      } else {
+        alert("【GASエラー】" + data.message);
+        resetFlow();
+      }
+    })
+    .catch(error => {
+      alert("【通信失敗 / CORSブロック】原因: " + error.message);
+      console.error("詳細エラー:", error);
+      resetFlow();
+    });
   }
-  return res.json(); // 新しいGAS（MimeType.JSON）に対応
-})
-.then(data => {
-  alert("受信データ内容: " + JSON.stringify(data));
-  
-  if (data.status === "success") {
-    alert("【成功】" + data.message);
-    // 既存の成功時処理（画面クリアや色変更など）があればここに記述
-  } else {
-    alert("【GASエラー】" + data.message);
-    // 既存のエラー表示処理があればここに記述
-  }
-})
-.catch(error => {
-  // フリーズの真犯人がCORSブロックや接続拒否の場合、必ずここが動きます
-  alert("【通信失敗 / CORSブロック】原因: " + error.message);
-  console.error("詳細エラー:", error);
-});}
 
   window.onload = () => { resetFlow(); };
 </script>
