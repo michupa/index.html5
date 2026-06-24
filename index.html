@@ -56,7 +56,7 @@
 </div>
 
 <script>
-  // ⚠️ 再生成した最新のGASウェブアプリURLに書き換えてください
+  // ⚠️ 新しいデプロイを行った場合は、最新のGASウェブアプリURLに書き換えてください
   const API_URL = "https://script.google.com/macros/s/AKfycbxykj9XOMDFVdOhHe5AD_ch5Oa0gY25wi6yDC7q4itLYk4zgNCiWQvRKUR0iB1kdyd3CA/exec";
 
   let html5QrcodeScanner = null;
@@ -291,6 +291,7 @@
     msgEl.innerText = "⏳ 通信中...";
     document.getElementById("toggle-mode-btn").classList.add("hidden");
 
+    // GAS側が100%パースできるように、標準的なtext/plain形式でJSON文字列を送信
     fetch(API_URL, {
       method: "POST",
       mode: "cors",
@@ -310,20 +311,21 @@
       isProcessing = false;
       
       try {
-        // GASから返ってきた JSONString を安全にオブジェクト化
+        // GASから返ってきた JSONString を安全に解読
         const json = JSON.parse(textData);
         
-        if (json.status === "success" || json.status === "SUCCESS") {
+        // statusの文字を大文字小文字問わずにチェック
+        if (json.status && json.status.toLowerCase() === "success") {
           msgEl.style.color = "#16a34a"; 
           msgEl.innerText = "🎉 " + (json.message || "処理が完了しました！");
           setTimeout(resetFlow, 3000);
         } else {
           msgEl.style.color = "#dc2626"; 
-          msgEl.innerText = "⚠️ 制限: " + (json.message || "処理を制限しました");
+          msgEl.innerText = "⚠️ 制限: " + (json.message || "エラーが発生しました");
           setTimeout(resetFlow, 4000);
         }
       } catch (e) {
-        // 万が一、JSON以外のテキストが返ってきた場合のフォールバック
+        // 万が一、GAS側から生テキスト（成功/エラー文言）が返ってきた場合のセーフティネット
         if (textData.includes("success") || textData.includes("SUCCESS") || textData.includes("完了")) {
           msgEl.style.color = "#16a34a";
           msgEl.innerText = "🎉 処理が完了しました！";
