@@ -1,45 +1,381 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>QR Code Scanner</title>
-    <script src="https://unpkg.com/html5-qrcode"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QR管理システム</title>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <style>
+    body { font-family: 'Helvetica Neue', Arial, sans-serif; text-align: center; margin: 0; padding: 20px; background-color: #f4f6f9; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+    h1 { font-size: 1.5rem; margin-bottom: 20px; color: #1e3a8a; }
+    select { width: 100%; padding: 12px; font-size: 1rem; border-radius: 8px; border: 1px solid #cbd5e1; margin-bottom: 15px; box-sizing: border-box; background-color: #fff; cursor: pointer; font-weight: bold; }
+    #reader { width: 100%; border-radius: 8px; overflow: hidden; margin-bottom: 15px; border: 1px solid #e2e8f0; min-height: 250px; background-color: #ebebeb; }
+    #status-message { font-size: 1.1rem; font-weight: bold; color: #2563eb; padding: 10px; background: #eff6ff; border-radius: 6px; margin-bottom: 15px; min-height: 24px; }
+    
+    .hidden { display: none; }
+    .btn-toggle { background-color: #64748b; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-size: 0.95rem; cursor: pointer; font-weight: bold; margin-bottom: 15px; width: 100%; }
+    .btn-toggle:hover { background-color: #475569; }
+    .manual-box { background: #f8fafc; border: 1px solid #e2e8f0; padding: 15px; border-radius: 8px; margin-bottom: 15px; text-align: left; }
+    .manual-box label { font-size: 0.9rem; font-weight: bold; color: #475569; display: block; margin-top: 10px; }
+    .manual-box label:first-child { margin-top: 0; }
+    .input-field { width: 100%; padding: 10px; margin-top: 5px; border-radius: 6px; border: 1px solid #cbd5e1; box-sizing: border-box; font-size: 1rem; }
+    .btn-submit { background-color: #10b981; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 1rem; cursor: pointer; font-weight: bold; width: 100%; margin-top: 15px; }
+    .btn-submit:hover { background-color: #059669; }
+  </style>
 </head>
 <body>
-    <h1>QRコードリーダー</h1>
-    <div id="reader" style="width: 100%; max-width: 500px;"></div>
 
-    <script>
-        // ★ここに新しくデプロイした「GASのウェブアプリURL」を貼り付けてください
-        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzKEted-9tW00OJbf9syjvVp3h6nHE6t-StAQGxmPD-rEuHffDkLcWoEHpWvZjKXchH8A/exec";
+<div class="container">
+  <h1>物品管理 QRシステム</h1>
+  
+  <select id="mode-select" onchange="onModeChange()">
+    <option value="入庫">① 入庫処理</option>
+    <option value="出庫">② 出庫処理</option>
+    <option value="配置替え">③ 配置替え処理</option>
+    <option value="ロケーション登録">④ ロケーション登録</option>
+  </select>
 
-        function onScanSuccess(decodedText, decodedResult) {
-            console.log(`Scan result: ${decodedText}`);
-            
-            // GASへデータを送信
-            fetch(GAS_WEB_APP_URL, {
-                method: "POST",
-                mode: "no-cors", // GASへの簡易リクエスト用
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({ text: decodedText })
-            })
-            .then(() => {
-                alert("データをスプレッドシートに記録しました: " + decodedText);
-            })
-            .catch(err => {
-                console.error("エラーが発生しました:", err);
-                alert("送信に失敗しました");
-            });
-        }
+  <div id="status-message">システムを初期化中...</div>
 
-        // カメラの起動
-        const html5QrcodeScanner = new Html5QrcodeScanner(
-            "reader", { fps: 10, qrbox: 250 }
-        );
-        html5QrcodeScanner.render(onScanSuccess);
-    </script>
+  <button id="toggle-mode-btn" class="btn-toggle hidden" onclick="toggleInputMode()">手入力モードに切り替え</button>
+
+  <div id="camera-section">
+    <div id="reader"></div>
+  </div>
+
+  <div id="manual-section" class="manual-box hidden">
+    <label id="label-code" for="manual-code">型式コード (空欄の場合は一時IDが自動生成されます):</label>
+    <input type="text" id="manual-code" class="input-field" placeholder="例: ABC-1234 (空欄可)">
+    
+    <label for="product-name">製品名・メモ:</label>
+    <input type="text" id="product-name" class="input-field" placeholder="例: オフィスチェア 青">
+    
+    <button class="btn-submit" onclick="submitManualInput()">入力内容を確定する</button>
+  </div>
+</div>
+
+<script>
+  // ⚠️ 最新のGASウェブアプリURLをここに貼り付けてください
+  const API_URL = "https://script.google.com/macros/s/AKfycbxykj9XOMDFVdOhHe5AD_ch5Oa0gY25wi6yDC7q4itLYk4zgNCiWQvRKUR0iB1kdyd3CA/exec";
+
+  let html5QrcodeScanner = null;
+  let currentMode = "入庫";
+  let step = 1; 
+  let isProcessing = false; 
+  let isManualMode = false;
+
+  let dataLog = { location: "", model: "", newLocation: "" };
+
+  function onModeChange() {
+    currentMode = document.getElementById("mode-select").value;
+    resetFlow();
+  }
+
+  function resetFlow() {
+    step = 1;
+    isProcessing = false;
+    isManualMode = false;
+    dataLog = { location: "", model: "", newLocation: "" };
+    
+    document.getElementById("manual-code").value = "";
+    document.getElementById("product-name").value = "";
+    document.getElementById("manual-section").classList.add("hidden");
+    document.getElementById("camera-section").classList.remove("hidden");
+    
+    updateGuideMessage();
+    updateToggleVisibility();
+    
+    if (html5QrcodeScanner) {
+      html5QrcodeScanner.clear().then(() => {
+        html5QrcodeScanner = null;
+        setTimeout(startScanner, 400);
+      }).catch(err => {
+        html5QrcodeScanner = null;
+        setTimeout(startScanner, 400);
+      });
+    } else {
+      setTimeout(startScanner, 400);
+    }
+  }
+
+  function updateToggleVisibility() {
+    const toggleBtn = document.getElementById("toggle-mode-btn");
+    const labelCode = document.getElementById("label-code");
+    
+    const isModelStep = 
+      (currentMode === "入庫" && step === 2) ||
+      (currentMode === "出庫" && step === 2) ||
+      (currentMode === "配置替え" && step === 2);
+
+    if (isModelStep) {
+      toggleBtn.classList.remove("hidden");
+      toggleBtn.innerText = isManualMode ? "カメラスキャンに戻る" : "手入力モードに切り替え";
+      labelCode.innerText = "型式コード (空欄の場合は一時IDが自動生成されます):";
+    } else {
+      toggleBtn.classList.add("hidden");
+    }
+  }
+
+  function toggleInputMode() {
+    isManualMode = !isManualMode;
+    const cameraSection = document.getElementById("camera-section");
+    const manualSection = document.getElementById("manual-section");
+
+    if (isManualMode) {
+      if (html5QrcodeScanner) {
+        html5QrcodeScanner.clear().then(() => { html5QrcodeScanner = null; }).catch(() => { html5QrcodeScanner = null; });
+      }
+      cameraSection.classList.add("hidden");
+      manualSection.classList.remove("hidden");
+      document.getElementById("manual-code").focus();
+    } else {
+      cameraSection.classList.remove("hidden");
+      manualSection.classList.add("hidden");
+      setTimeout(startScanner, 400);
+    }
+    updateToggleVisibility();
+  }
+
+  function generateTempId() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const date = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    return `TEMP-${year}${month}${date}-${hours}${minutes}${seconds}`;
+  }
+
+  function submitManualInput() {
+    if (isProcessing) return;
+
+    let code = document.getElementById("manual-code").value.trim();
+    const memo = document.getElementById("product-name").value.trim();
+
+    // 全てのモードで型式が空欄なら一時IDを自動生成
+    if ((currentMode === "入庫" || currentMode === "出庫" || currentMode === "配置替え") && !code) {
+      code = generateTempId();
+    }
+
+    if (!code) {
+      alert("型式コードを入力してください。");
+      return;
+    }
+
+    if (memo) {
+      dataLog.model = `${code}  ${memo}`;
+    } else {
+      dataLog.model = code;
+    }
+
+    isProcessing = true;
+    showConfirmDialog(dataLog.model, true);
+  }
+
+  function updateGuideMessage() {
+    const msgEl = document.getElementById("status-message");
+    if (currentMode === "入庫") {
+      msgEl.innerText = step === 1 ? "【入庫】ロケーションをスキャンしてください" : "【入庫】型式をスキャンまたは手入力してください";
+    } else if (currentMode === "出庫") {
+      msgEl.innerText = step === 1 ? "【出庫】ロケーションをスキャンしてください" : "【出庫】型式をスキャンまたは手入力してください";
+    } else if (currentMode === "配置替え") {
+      if (step === 1) msgEl.innerText = "【配置替え】移動元のロケーションをスキャン";
+      else if (step === 2) msgEl.innerText = "【配置替え】製品（型式）をスキャンまたは手入力";
+      else msgEl.innerText = "【配置替え】移動先の新ロケーションをスキャン";
+    } else if (currentMode === "ロケーション登録") {
+      msgEl.innerText = "【登録】新規登録するロケーションをスキャンしてください";
+    }
+  }
+
+  function onScanSuccess(decodedText) {
+    if (isProcessing) return; 
+    isProcessing = true; 
+
+    if (html5QrcodeScanner) {
+      html5QrcodeScanner.clear().then(() => {
+        html5QrcodeScanner = null;
+        showConfirmDialog(decodedText, false);
+      }).catch(() => {
+        html5QrcodeScanner = null;
+        showConfirmDialog(decodedText, false);
+      });
+    } else {
+      showConfirmDialog(decodedText, false);
+    }
+  }
+
+  function showConfirmDialog(decodedText, isManualFrom) {
+    let confirmMessage = "";
+    
+    if (currentMode === "入庫") {
+      if (step === 1) {
+        dataLog.location = decodedText;
+        confirmMessage = `入庫先ロケーション: ${decodedText}\n\nこの場所を選択しますか？`;
+      } else {
+        if (!isManualFrom) dataLog.model = decodedText;
+        confirmMessage = `製品/型式: ${dataLog.model}\nロケーション: ${dataLog.location}\n\nこの内容で入庫を確定しますか？`;
+      }
+    } else if (currentMode === "出庫") {
+      if (step === 1) {
+        dataLog.location = decodedText;
+        confirmMessage = `出庫元ロケーション: ${decodedText}\n\nこの場所から出庫しますか？`;
+      } else {
+        if (!isManualFrom) dataLog.model = decodedText;
+        confirmMessage = `製品/型式: ${dataLog.model}\nロケーション: ${dataLog.location}\n\nこの製品を出庫しますか？`;
+      }
+    } else if (currentMode === "配置替え") {
+      if (step === 1) {
+        dataLog.location = decodedText;
+        confirmMessage = `移動元ロケーション: ${decodedText}\n\nここから移動しますか？`;
+      } else if (step === 2) {
+        if (!isManualFrom) dataLog.model = decodedText;
+        confirmMessage = `製品/型式: ${dataLog.model}\n\nこの製品を移動しますか？`;
+      } else {
+        dataLog.newLocation = decodedText;
+        confirmMessage = `新ロケーション: ${decodedText}\n\nここに配置を換えますか？`;
+      }
+    } else if (currentMode === "ロケーション登録") {
+      dataLog.location = decodedText;
+      confirmMessage = `新規ロケーション: ${decodedText}\n\nこの場所をマスターに登録しますか？`;
+    }
+
+    const userConfirmed = confirm(confirmMessage);
+
+    if (userConfirmed) {
+      proceedToNext();
+    } else {
+      isProcessing = false;
+      if (isManualFrom) {
+        isProcessing = false;
+      } else {
+        updateGuideMessage();
+        setTimeout(startScanner, 400);       
+      }
+    }
+  }
+
+  function proceedToNext() {
+    if (isManualMode) {
+      isManualMode = false;
+      document.getElementById("manual-section").classList.add("hidden");
+      document.getElementById("camera-section").classList.remove("hidden");
+    }
+
+    if (currentMode === "入庫" && step === 1) {
+      step = 2;
+      isProcessing = false;
+      updateGuideMessage();
+      updateToggleVisibility();
+      setTimeout(startScanner, 400); 
+    } else if (currentMode === "出庫" && step === 1) {
+      step = 2;
+      isProcessing = false;
+      updateGuideMessage();
+      updateToggleVisibility();
+      setTimeout(startScanner, 400); 
+    } else if (currentMode === "配置替え" && (step === 1 || step === 2)) {
+      step++;
+      isProcessing = false;
+      updateGuideMessage();
+      updateToggleVisibility();
+      setTimeout(startScanner, 400); 
+    } else {
+      sendDataToBackend();
+    }
+  }
+
+function sendDataToBackend() {
+  const msgEl = document.getElementById("status-message");
+  
+  // スタイルをリセットして通信中表示
+  msgEl.style.background = "#eff6ff";
+  msgEl.style.color = "#2563eb";
+  msgEl.innerText = "⏳ GASへデータを送信中...";
+  document.getElementById("toggle-mode-btn").classList.add("hidden");
+
+  const sendMode = currentMode || "";
+  const sendLocation = dataLog.location || "";
+  const sendModel = dataLog.model || "";
+  const sendNewLocation = dataLog.newLocation || "";
+
+  fetch(API_URL, { 
+    method: "POST",
+    headers: { "Content-Type": "text/plain" },
+    body: JSON.stringify({
+      mode: sendMode,
+      location: sendLocation,
+      model: sendModel,
+      newLocation: sendNewLocation
+    })
+  })
+  .then(res => {
+    if (!res.ok) throw new Error("ネットワークエラー: " + res.status);
+    return res.json();
+  })
+  .then(data => {
+    if (data.status === "success") {
+      // 💡 ウィンドウを出さず、画面の帯を緑色にして成功を表示！
+      msgEl.style.background = "#d1fae5"; // 薄い緑
+      msgEl.style.color = "#065f46";      // 濃い緑
+      msgEl.innerText = "✅ 【成功】" + data.message;
+    } else {
+      // 💡 画面の帯を赤色にしてGASエラーを表示！
+      msgEl.style.background = "#fee2e2"; // 薄い赤
+      msgEl.style.color = "#991b1b";      // 濃い赤
+      msgEl.innerText = "❌ 【エラー】" + data.message;
+    }
+    // 3秒後に画面を自動リセットして次のスキャンへ
+    setTimeout(resetFlow, 3000);
+  })
+  .catch(error => {
+    msgEl.style.background = "#fee2e2";
+    msgEl.style.color = "#991b1b";
+    msgEl.innerText = "⚠️ 【通信失敗】" + error.message;
+    setTimeout(resetFlow, 3000);
+  });
+}
+// 📸 カメラを起動するためのコア処理（この関数が抜けていたため映りませんでした）
+  function startScanner() {
+    // すでにスキャナーが存在する場合は一度クリアする
+    if (html5QrcodeScanner) {
+      html5QrcodeScanner.clear().then(() => {
+        html5QrcodeScanner = null;
+        initHtml5Qrcode();
+      }).catch(() => {
+        initHtml5Qrcode();
+      });
+    } else {
+      initHtml5Qrcode();
+    }
+  }
+
+  // ライブラリを読み込んでカメラを描画する内部処理
+  function initHtml5Qrcode() {
+    updateGuideMessage();
+    updateToggleVisibility();
+
+    // 画面上の <div id="reader"></div> に対してカメラを紐付け
+    html5QrcodeScanner = new Html5QrcodeScanner(
+      "reader", 
+      { 
+        fps: 10, 
+        qrbox: { width: 250, height: 250 },
+        rememberLastUsedCamera: true
+      },
+      /* verbose= */ false
+    );
+    
+    // スキャン成功時の関数（onScanSuccess）を渡して起動
+    html5QrcodeScanner.render(onScanSuccess, (errorMessage) => {
+      // スキャン中の細かいエラー（認識失敗など）はログに流すだけで画面には出さない
+      console.warn(errorMessage);
+    });
+  }
+  
+  window.onload = () => { resetFlow(); };
+</script>
+
 </body>
 </html>
