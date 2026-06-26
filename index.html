@@ -287,55 +287,64 @@
   }
 
 function sendDataToBackend() {
-    const msgEl = document.getElementById("status-message");
-    msgEl.innerText = "⏳ 通信中...";
-    document.getElementById("toggle-mode-btn").classList.add("hidden");
+  const msgEl = document.getElementById("status-message");
+  if (!msgEl) return;
 
-    // 💡 システム既存の変数（currentMode, dataLog）から安全に値を抽出
-    const sendMode = currentMode || "";
-    const sendLocation = dataLog.location || "";
-    const sendModel = dataLog.model || "";
-    const sendNewLocation = dataLog.newLocation || "";
+  // 1. スタイルをリセットして通信中表示
+  msgEl.style.background = "#eff6ff"; // 薄い青
+  msgEl.style.color = "#2563eb";      // 濃い青
+  msgEl.style.fontWeight = "bold";
+  msgEl.innerText = "⏳ GASへデータを送信中...";
 
-    alert("GASへデータを送信します...\nモード: " + sendMode + "\nロケ: " + sendLocation + "\n型式: " + sendModel);
+  // モード切り替えボタンなどを一時的に非表示（連続タップ防止）
+  const toggleBtn = document.getElementById("toggle-mode-btn");
+  if (toggleBtn) toggleBtn.classList.add("hidden");
 
-    // 定義されている API_URL をそのまま使用
-    fetch(API_URL, { 
-      method: "POST",
-      headers: {
-        "Content-Type": "text/plain"
-      },
-      body: JSON.stringify({
-        mode: sendMode,
-        location: sendLocation,
-        model: sendModel,
-        newLocation: sendNewLocation
-      })
+  // 送信データの準備
+  const sendMode = currentMode || "";
+  const sendLocation = dataLog.location || "";
+  const sendModel = dataLog.model || "";
+  const sendNewLocation = dataLog.newLocation || "";
+
+  fetch(API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain" }, // GASのdoPostを受けるための基本設定
+    body: JSON.stringify({
+      mode: sendMode,
+      location: sendLocation,
+      model: sendModel,
+      newLocation: sendNewLocation
     })
-    .then(res => {
-      alert("GASからレスポンスを受信しました。ステータス: " + res.status);
-      if (!res.ok) {
-        throw new Error("ネットワークエラー: " + res.status);
-      }
-      return res.json(); // 新しいGAS（MimeType.JSON）に対応
-    })
-    .then(data => {
-      alert("受信データ内容: " + JSON.stringify(data));
-      
-      if (data.status === "success") {
-        alert("【成功】" + data.message);
-        resetFlow(); // 成功したら初期状態に戻す
-      } else {
-        alert("【GASエラー】" + data.message);
-        resetFlow();
-      }
-    })
-    .catch(error => {
-      alert("【通信失敗 / CORSブロック】原因: " + error.message);
-      console.error("詳細エラー:", error);
-      resetFlow();
-    });
-  }
+  })
+  .then(res => {
+    if (!res.ok) throw new Error("ネットワークエラー: " + res.status);
+    return res.json();
+  })
+  .then(data => {
+    if (data.status === "success") {
+      // 💡 ウィンドウを出さず、画面の帯を緑色にして成功を表示！
+      msgEl.style.background = "#d1fae5"; // 薄い緑
+      msgEl.style.color = "#065f46";      // 濃い緑
+      msgEl.innerText = "✅ 【成功】" + data.message;
+    } else {
+      // 💡 画面の帯を赤色にしてGAS側エラーを表示！
+      msgEl.style.background = "#fee2e2"; // 薄い赤
+      msgEl.style.color = "#991b1b";      // 濃い赤
+      msgEl.innerText = "❌ 【エラー】" + data.message;
+    }
+    // 3秒後に画面を自動リセットして次のスキャンへ
+    setTimeout(resetFlow, 3000);
+  })
+  .catch(error => {
+    // 💡 通信失敗時も赤帯で表示
+    msgEl.style.background = "#fee2e2"; // 薄い赤
+    msgEl.style.color = "#991b1b";      // 濃い赤
+    msgEl.innerText = "⚠️ 【通信失敗】" + error.message;
+    
+    // 3秒後に自動リセット
+    setTimeout(resetFlow, 3000);
+  });
+}
 // 📸 カメラを起動するためのコア処理（この関数が抜けていたため映りませんでした）
   function startScanner() {
     // すでにスキャナーが存在する場合は一度クリアする
