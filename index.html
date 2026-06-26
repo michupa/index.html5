@@ -38,15 +38,16 @@
 
   <div id="status-message">システムを初期化中...</div>
 
-  <button id="toggle-mode-btn" class="btn-toggle hidden" onclick="toggleInputMode()">手入力モードに切り替え</button>
+  <!-- 💡 ボタンは常に表示制御されるためhiddenクラスを初期状態で外しています -->
+  <button id="toggle-mode-btn" class="btn-toggle" onclick="toggleInputMode()">手入力モードに切り替え</button>
 
   <div id="camera-section">
     <div id="reader"></div>
   </div>
 
   <div id="manual-section" class="manual-box hidden">
-    <label id="label-code" for="manual-code">型式コード (空欄の場合は一時IDが自動生成されます):</label>
-    <input type="text" id="manual-code" class="input-field" placeholder="例: ABC-1234 (空欄可)">
+    <label id="label-code" for="manual-code">入力欄</label>
+    <input type="text" id="manual-code" class="input-field" placeholder="">
     
     <label id="label-memo" for="product-name">製品名・メモ:</label>
     <input type="text" id="product-name" class="input-field" placeholder="例: オフィスチェア 青">
@@ -81,7 +82,6 @@
     document.getElementById("manual-code").value = "";
     document.getElementById("product-name").value = "";
     
-    // 表示状態のリセット
     document.getElementById("manual-code").classList.remove("hidden");
     document.getElementById("product-name").classList.remove("hidden");
     const memoLabel = document.getElementById("label-memo");
@@ -106,35 +106,50 @@
     }
   }
 
-  // 🛠️ 修正箇所①：ボタン表示ロジックに「ロケーション登録」時の条件を追加
+  // 🛠️ 改善箇所①：全モード・全ステップで手入力ボタンを表示。ラベルとプレースホルダーを動的に変更
   function updateToggleVisibility() {
     const toggleBtn = document.getElementById("toggle-mode-btn");
     const labelCode = document.getElementById("label-code");
+    const inputCode = document.getElementById("manual-code");
     
-    const isModelStep = 
-      (currentMode === "入庫" && step === 2) ||
-      (currentMode === "出庫" && step === 2) ||
-      (currentMode === "配置替え" && step === 2);
+    toggleBtn.classList.remove("hidden");
+    toggleBtn.innerText = isManualMode ? "カメラスキャンに戻る" : "手入力モードに切り替え";
 
-    const isLocationRegisterMode = (currentMode === "ロケーション登録");
-
-    if (isModelStep || isLocationRegisterMode) {
-      toggleBtn.classList.remove("hidden");
-      toggleBtn.innerText = isManualMode ? "カメラスキャンに戻る" : "手入力モードに切り替え";
-      
-      if (isLocationRegisterMode) {
-        labelCode.innerText = "登録するロケーション名:";
-        document.getElementById("manual-code").placeholder = "例: 3A1R5";
+    // 現在のモードとステップに応じて、手入力ボックスの見た目を最適化する
+    if (currentMode === "入庫") {
+      if (step === 1) {
+        labelCode.innerText = "入庫先ロケーション名:";
+        inputCode.placeholder = "例: 3A1R5";
       } else {
         labelCode.innerText = "型式コード (空欄の場合は一時IDが自動生成されます):";
-        document.getElementById("manual-code").placeholder = "例: ABC-1234 (空欄可)";
+        inputCode.placeholder = "例: ABC-1234 (空欄可)";
       }
-    } else {
-      toggleBtn.classList.add("hidden");
+    } else if (currentMode === "出庫") {
+      if (step === 1) {
+        labelCode.innerText = "出庫元ロケーション名:";
+        inputCode.placeholder = "例: 3A1R5";
+      } else {
+        labelCode.innerText = "型式コード (空欄の場合は一時IDが自動生成されます):";
+        inputCode.placeholder = "例: ABC-1234 (空欄可)";
+      }
+    } else if (currentMode === "配置替え") {
+      if (step === 1) {
+        labelCode.innerText = "移動元のロケーション名:";
+        inputCode.placeholder = "例: 3A1R5";
+      } else if (step === 2) {
+        labelCode.innerText = "型式コード (空欄の場合は一時IDが自動生成されます):";
+        inputCode.placeholder = "例: ABC-1234 (空欄可)";
+      } else {
+        labelCode.innerText = "移動先の新ロケーション名:";
+        inputCode.placeholder = "例: 3A1R9";
+      }
+    } else if (currentMode === "ロケーション登録") {
+      labelCode.innerText = "登録するロケーション名:";
+      inputCode.placeholder = "例: 3A1R5";
     }
   }
 
-  // 🛠️ 修正箇所②：手入力切り替え時に「ロケーション登録」ならメモ欄を非表示にする
+  // 🛠️ 改善箇所②：ロケーション入力ステップの時は「製品名・メモ欄」を隠す
   function toggleInputMode() {
     isManualMode = !isManualMode;
     const cameraSection = document.getElementById("camera-section");
@@ -150,7 +165,14 @@
       const prodInput = document.getElementById("product-name");
       const memoLabel = document.getElementById("label-memo");
       
-      if (currentMode === "ロケーション登録") {
+      // ロケーションを入力するステップかどうかを判定
+      const isLocationStep = 
+        (currentMode === "ロケーション登録") ||
+        (currentMode === "入庫" && step === 1) ||
+        (currentMode === "出庫" && step === 1) ||
+        (currentMode === "配置替え" && (step === 1 || step === 3));
+
+      if (isLocationStep) {
         prodInput.classList.add("hidden");
         if (memoLabel) memoLabel.classList.add("hidden");
       } else {
@@ -178,24 +200,31 @@
     return `TEMP-${year}${month}${date}-${hours}${minutes}${seconds}`;
   }
 
-  // 🛠️ 修正箇所③：「ロケーション登録」で確定された時のデータセット処理を追加
+  // 🛠️ 改善箇所③：確定ボタンが押された時、現在のステップに応じて適切にロケーション変数へ代入
   function submitManualInput() {
     if (isProcessing) return;
 
     let code = document.getElementById("manual-code").value.trim();
     const memo = document.getElementById("product-name").value.trim();
 
-    if (currentMode === "ロケーション登録") {
+    // 1. 各種ロケーション入力ステップの場合の処理
+    const isLocationStep = 
+      (currentMode === "ロケーション登録") ||
+      (currentMode === "入庫" && step === 1) ||
+      (currentMode === "出庫" && step === 1) ||
+      (currentMode === "配置替え" && (step === 1 || step === 3));
+
+    if (isLocationStep) {
       if (!code) {
         alert("ロケーション名を入力してください。");
         return;
       }
-      dataLog.location = code;
       isProcessing = true;
-      showConfirmDialog(dataLog.location, true);
+      showConfirmDialog(code, true);
       return;
     }
 
+    // 2. 型式入力ステップの場合の処理（従来通り）
     if ((currentMode === "入庫" || currentMode === "出庫" || currentMode === "配置替え") && !code) {
       code = generateTempId();
     }
@@ -218,13 +247,13 @@
   function updateGuideMessage() {
     const msgEl = document.getElementById("status-message");
     if (currentMode === "入庫") {
-      msgEl.innerText = step === 1 ? "【入庫】ロケーションをスキャンしてください" : "【入庫】型式をスキャンまたは手入力してください";
+      msgEl.innerText = step === 1 ? "【入庫】ロケーションをスキャンまたは手入力してください" : "【入庫】型式をスキャンまたは手入力してください";
     } else if (currentMode === "出庫") {
-      msgEl.innerText = step === 1 ? "【出庫】ロケーションをスキャンしてください" : "【出庫】型式をスキャンまたは手入力してください";
+      msgEl.innerText = step === 1 ? "【出庫】ロケーションをスキャンまたは手入力してください" : "【出庫】型式をスキャンまたは手入力してください";
     } else if (currentMode === "配置替え") {
-      if (step === 1) msgEl.innerText = "【配置替え】移動元のロケーションをスキャン";
+      if (step === 1) msgEl.innerText = "【配置替え】移動元のロケーションをスキャンまたは手入力";
       else if (step === 2) msgEl.innerText = "【配置替え】製品（型式）をスキャンまたは手入力";
-      else msgEl.innerText = "【配置替え】移動先の新ロケーションをスキャン";
+      else msgEl.innerText = "【配置替え】移動先の新ロケーションをスキャンまたは手入力";
     } else if (currentMode === "ロケーション登録") {
       msgEl.innerText = "【登録】新規登録するロケーションをスキャンまたは手入力してください";
     }
@@ -303,6 +332,10 @@
       document.getElementById("manual-section").classList.add("hidden");
       document.getElementById("camera-section").classList.remove("hidden");
     }
+
+    // 手入力値をリセット
+    document.getElementById("manual-code").value = "";
+    document.getElementById("product-name").value = "";
 
     if (currentMode === "入庫" && step === 1) {
       step = 2;
