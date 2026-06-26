@@ -200,7 +200,7 @@
     return `TEMP-${year}${month}${date}-${hours}${minutes}${seconds}`;
   }
 
-  // 🛠️ 改善箇所③：確定ボタンが押された時、現在のステップに応じて適切にロケーション変数へ代入
+ // 確定ボタンが押された時の処理（出庫・配置替えでの一時ID強制発行を防止）
   function submitManualInput() {
     if (isProcessing) return;
 
@@ -224,18 +224,22 @@
       return;
     }
 
-    // 2. 型式入力ステップの場合の処理（従来通り）
-    if ((currentMode === "入庫" || currentMode === "出庫" || currentMode === "配置替え") && !code) {
+    // 2. 型式入力ステップの場合の処理
+    // 💡 修正：一時ID（TEMP-）の自動生成は「入庫」のときだけ機能するように限定します
+    if (currentMode === "入庫" && !code) {
       code = generateTempId();
     }
 
-    if (!code) {
-      alert("型式コードを入力してください。");
+    // 出庫・配置替えのときに型式コードもメモも完全に空欄ならエラーにします
+    if (!code && !memo) {
+      alert("型式コードまたは製品名を入力してください。");
       return;
     }
 
+    // 製品名・メモが入力されている場合の結合処理
     if (memo) {
-      dataLog.model = `${code}  ${memo}`;
+      // 型式コードが空でメモだけある場合は、メモの内容を主軸にします
+      dataLog.model = code ? `${code}  ${memo}` : memo;
     } else {
       dataLog.model = code;
     }
@@ -243,7 +247,7 @@
     isProcessing = true;
     showConfirmDialog(dataLog.model, true);
   }
-
+  
   function updateGuideMessage() {
     const msgEl = document.getElementById("status-message");
     if (currentMode === "入庫") {
